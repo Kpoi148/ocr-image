@@ -7,7 +7,12 @@
 </head>
 <body>
   <h2>Trích xuất Text từ Ảnh</h2>
-  <input type="file" id="imageUpload" accept="image/*">
+  <div id="dropZone" class="drop-zone" role="button" tabindex="0">
+    <div class="drop-zone__title">Kéo & thả ảnh vào đây</div>
+    <div class="drop-zone__hint">Hoặc bấm vùng này để chọn ảnh</div>
+    <div class="drop-zone__file" id="dropFileName"></div>
+  </div>
+  <input type="file" id="imageUpload" accept="image/*" hidden>
   <button id="extractButton">Trích xuất Text</button>
   <div id="progress" style="display: none;">Đang xử lý... <progress></progress></div>
   <textarea id="resultText" placeholder="Text sẽ hiển thị ở đây" rows="10" cols="40" readonly></textarea>

@@ -9,10 +9,47 @@ h2 {
   margin-bottom: 10px;
 }
 
-input[type="file"], button {
+input[type="file"], .drop-zone, button {
   margin: 10px 0;
   padding: 5px;
   width: 100%;  /* Full width cho dễ click */
+}
+
+.drop-zone {
+  border: 2px dashed #b7b7b7;
+  border-radius: 10px;
+  background: #fafafa;
+  padding: 18px 10px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+  transform: translateX(-12px);
+}
+
+.drop-zone--active {
+  border-color: #4CAF50;
+  background: #f0fff0;
+}
+
+.drop-zone--disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.drop-zone__title {
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.drop-zone__hint {
+  font-size: 12px;
+  color: #666666;
+}
+
+.drop-zone__file {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #333333;
+  word-break: break-word;
 }
 
 button {

@@ -85,19 +85,80 @@ async function runOcrFromSrcUrl(srcUrl, resultText, progressDiv) {
 // Event listeners (tách riêng để dễ thêm event mới)
 document.addEventListener('DOMContentLoaded', () => {
   const uploadInput = document.getElementById('imageUpload');
+  const dropZone = document.getElementById('dropZone');
+  const dropFileName = document.getElementById('dropFileName');
   const extractButton = document.getElementById('extractButton');
   const resultText = document.getElementById('resultText');
   const progressDiv = document.getElementById('progress');
   const srcUrl = new URLSearchParams(window.location.search).get('src');
+  let selectedFile = null;
 
   if (srcUrl) {
     uploadInput.disabled = true;
+    dropZone.classList.add('drop-zone--disabled');
+    dropZone.setAttribute('aria-disabled', 'true');
+    dropZone.tabIndex = -1;
     extractButton.disabled = true;
     runOcrFromSrcUrl(srcUrl, resultText, progressDiv);
   }
 
+  function setSelectedFile(file) {
+    selectedFile = file;
+    dropFileName.textContent = file ? file.name : '';
+  }
+
+  function triggerFilePicker() {
+    if (uploadInput.disabled) {
+      return;
+    }
+    uploadInput.click();
+  }
+
+  dropZone.addEventListener('click', () => {
+    triggerFilePicker();
+  });
+
+  dropZone.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      triggerFilePicker();
+    }
+  });
+
+  dropZone.addEventListener('dragover', event => {
+    event.preventDefault();
+    if (!uploadInput.disabled) {
+      dropZone.classList.add('drop-zone--active');
+    }
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('drop-zone--active');
+  });
+
+  dropZone.addEventListener('drop', event => {
+    event.preventDefault();
+    dropZone.classList.remove('drop-zone--active');
+    if (uploadInput.disabled) {
+      return;
+    }
+    const file = event.dataTransfer.files[0];
+    if (!file) {
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      alert('Vui lòng chọn file ảnh!');
+      return;
+    }
+    setSelectedFile(file);
+  });
+
+  uploadInput.addEventListener('change', () => {
+    setSelectedFile(uploadInput.files[0] || null);
+  });
+
   extractButton.addEventListener('click', async () => {
-    const file = uploadInput.files[0];
+    const file = selectedFile || uploadInput.files[0];
     if (!file) {
       alert('Vui lòng chọn ảnh!');
       return;
