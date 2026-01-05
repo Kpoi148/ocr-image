@@ -4,6 +4,12 @@ const PREPROCESS_OPTIONS = {
   contrast: 0.25,
   threshold: true
 };
+const WORKER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+
+let warmWorker = null;
+let warmWorkerPromise = null;
+let workerIdleTimer = null;
+const memoryCache = new Map();
 
 function debugLog(...args) {
   if (DEBUG) {
@@ -17,6 +23,40 @@ async function fetchImageBlob(url) {
     throw new Error(`Khong the tai anh (${response.status})`);
   }
   return await response.blob();
+}
+
+function bufferToHex(buffer) {
+  const bytes = new Uint8Array(buffer);
+  let hex = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    const value = bytes[i].toString(16).padStart(2, '0');
+    hex += value;
+  }
+  return hex;
+}
+
+async function hashBlob(blob) {
+  const buffer = await blob.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return bufferToHex(digest);
+}
+
+async function getCachedResult(hash) {
+  const key = `ocr:${hash}`;
+  if (chrome?.storage?.local) {
+    const data = await chrome.storage.local.get(key);
+    return data[key] || null;
+  }
+  return memoryCache.get(key) || null;
+}
+
+async function setCachedResult(hash, entry) {
+  const key = `ocr:${hash}`;
+  if (chrome?.storage?.local) {
+    await chrome.storage.local.set({ [key]: entry });
+    return;
+  }
+  memoryCache.set(key, entry);
 }
 
 function clampByte(value) {
@@ -129,34 +169,100 @@ function sendProgress(tabId, requestId, status, progress) {
   });
 }
 
+function clearWorkerIdleTimer() {
+  if (workerIdleTimer) {
+    clearTimeout(workerIdleTimer);
+    workerIdleTimer = null;
+  }
+}
+
+function scheduleWorkerTermination() {
+  clearWorkerIdleTimer();
+  workerIdleTimer = setTimeout(async () => {
+    if (!warmWorker) {
+      return;
+    }
+    debugLog('worker idle timeout, terminating');
+    try {
+      await warmWorker.terminate();
+    } catch (error) {
+      debugLog('worker terminate error', error.message);
+    } finally {
+      warmWorker = null;
+    }
+  }, WORKER_IDLE_TIMEOUT_MS);
+}
+
+async function getWarmWorker(tabId, requestId) {
+  if (warmWorker) {
+    return warmWorker;
+  }
+  if (warmWorkerPromise) {
+    return warmWorkerPromise;
+  }
+  debugLog('creating warm worker');
+  warmWorkerPromise = Tesseract.createWorker('eng+vie', 1, {
+    logger: message => {
+      if (message && (message.status || typeof message.progress === 'number')) {
+        sendProgress(
+          tabId,
+          requestId,
+          message.status || '',
+          typeof message.progress === 'number' ? message.progress : null
+        );
+      }
+    },
+    workerPath: chrome.runtime.getURL('assets/tesseractjs/worker.min.js'),
+    corePath: chrome.runtime.getURL('assets/tesseractjs/tesseract-core.wasm.js'),
+    langPath: chrome.runtime.getURL('assets/tesseractjs/lang-data'),
+    workerBlobURL: false
+  });
+
+  try {
+    warmWorker = await warmWorkerPromise;
+    return warmWorker;
+  } catch (error) {
+    warmWorkerPromise = null;
+    throw error;
+  } finally {
+    warmWorkerPromise = null;
+  }
+}
+
 async function runOcrJob(job) {
   const { srcUrl, tabId, requestId } = job;
   debugLog('run job', { tabId, requestId, srcUrl });
 
-  let worker;
+  clearWorkerIdleTimer();
   try {
+    sendProgress(tabId, requestId, 'hashing', 0);
     sendProgress(tabId, requestId, 'preprocessing', 0);
     const imageBlob = await fetchImageBlob(srcUrl);
+    const imageHash = await hashBlob(imageBlob);
+    sendProgress(tabId, requestId, 'hashing', 1);
+    const cached = await getCachedResult(imageHash);
+    if (cached && cached.text) {
+      chrome.runtime.sendMessage({
+        action: 'ocr-result',
+        tabId,
+        requestId,
+        text: cached.text,
+        cached: true
+      });
+      debugLog('cache hit', imageHash);
+      scheduleWorkerTermination();
+      return;
+    }
     const processedBlob = await preprocessImage(imageBlob, PREPROCESS_OPTIONS);
     sendProgress(tabId, requestId, 'preprocessing', 1);
 
-    worker = await Tesseract.createWorker('eng+vie', 1, {
-      logger: message => {
-        if (message && (message.status || typeof message.progress === 'number')) {
-          sendProgress(
-            tabId,
-            requestId,
-            message.status || '',
-            typeof message.progress === 'number' ? message.progress : null
-          );
-        }
-      },
-      workerPath: chrome.runtime.getURL('assets/tesseractjs/worker.min.js'),
-      corePath: chrome.runtime.getURL('assets/tesseractjs/tesseract-core.wasm.js'),
-      langPath: chrome.runtime.getURL('assets/tesseractjs/lang-data'),
-      workerBlobURL: false
-    });
+    const worker = await getWarmWorker(tabId, requestId);
     const { data: { text } } = await worker.recognize(processedBlob);
+    await setCachedResult(imageHash, {
+      text,
+      srcUrl,
+      createdAt: Date.now()
+    });
     chrome.runtime.sendMessage({
       action: 'ocr-result',
       tabId,
@@ -173,9 +279,7 @@ async function runOcrJob(job) {
     });
     debugLog('job error', error.message);
   } finally {
-    if (worker) {
-      await worker.terminate();
-    }
+    scheduleWorkerTermination();
   }
 }
 

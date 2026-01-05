@@ -266,7 +266,7 @@
     }
     if (message && message.action === 'ocr-result' && message.requestId === activeRequestId) {
       const ui = ensureOverlay();
-      ui.statusText.textContent = 'Hoan thanh';
+      ui.statusText.textContent = message.cached ? 'Hoan thanh (cache)' : 'Hoan thanh';
       ui.resultText.value = message.text || '';
       isRunning = false;
       activeRequestId = null;
