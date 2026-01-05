@@ -99,12 +99,45 @@
         background: #ffffff;
         color: #111111;
         border-radius: 6px;
-        padding: 4px 8px;
+        width: 30px;
+        height: 30px;
+        padding: 0;
         cursor: pointer;
         font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
       }
       #${OVERLAY_ID} .ocr-extension-button:hover {
         background: #f0f0f0;
+      }
+      #${OVERLAY_ID} .ocr-extension-button:focus-visible {
+        outline: 2px solid #4CAF50;
+        outline-offset: 2px;
+      }
+      #${OVERLAY_ID} .ocr-extension-button--copy {
+        color: #1a7f37;
+        border-color: #b7e0c2;
+        background: #f1fbf4;
+      }
+      #${OVERLAY_ID} .ocr-extension-button--copy:hover {
+        background: #e6f6ea;
+        border-color: #98d3ad;
+      }
+      #${OVERLAY_ID} .ocr-extension-button--close {
+        color: #b42318;
+        border-color: #f3c8c5;
+        background: #fff3f1;
+      }
+      #${OVERLAY_ID} .ocr-extension-button--close:hover {
+        background: #ffe3df;
+        border-color: #e9a7a2;
+      }
+      #${OVERLAY_ID} .ocr-extension-icon {
+        width: 18px;
+        height: 18px;
+        display: block;
       }
       #${OVERLAY_ID} .ocr-extension-body {
         padding: 10px 12px 12px;
@@ -148,8 +181,18 @@
           <div class="ocr-extension-header">
             <div class="ocr-extension-title">OCR Text</div>
             <div class="ocr-extension-actions">
-              <button class="ocr-extension-button" id="ocr-extension-copy">Copy</button>
-              <button class="ocr-extension-button" id="ocr-extension-close">Dong</button>
+              <button class="ocr-extension-button ocr-extension-button--copy" id="ocr-extension-copy" aria-label="Copy" title="Copy">
+                <svg class="ocr-extension-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+              <button class="ocr-extension-button ocr-extension-button--close" id="ocr-extension-close" aria-label="Close" title="Close">
+                <svg class="ocr-extension-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
           </div>
           <div class="ocr-extension-body">
