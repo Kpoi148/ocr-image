@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function setSelectedFile(file) {
     selectedFile = file;
-    dropFileName.textContent = file ? file.name : '';
+    dropFileName.textContent = file ? (file.name || 'clipboard-image.png') : '';
   }
 
   function triggerFilePicker() {
@@ -113,6 +113,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     uploadInput.click();
   }
+
+  function getClipboardImageFile(event) {
+    const items = event.clipboardData?.items;
+    if (!items) {
+      return null;
+    }
+    for (const item of items) {
+      if (item.kind === 'file' && item.type.startsWith('image/')) {
+        return item.getAsFile();
+      }
+    }
+    return null;
+  }
+
+  document.addEventListener('paste', event => {
+    if (uploadInput.disabled) {
+      return;
+    }
+    const file = getClipboardImageFile(event);
+    if (!file) {
+      return;
+    }
+    event.preventDefault();
+    setSelectedFile(file);
+  });
 
   dropZone.addEventListener('click', () => {
     triggerFilePicker();
