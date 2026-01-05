@@ -1,0 +1,39 @@
+body {
+  font-family: Arial, sans-serif;
+  padding: 10px;
+  width: 300px;  /* Kích thước popup tiêu chuẩn */
+  text-align: center;
+}
+
+h2 {
+  margin-bottom: 10px;
+}
+
+input[type="file"], button {
+  margin: 10px 0;
+  padding: 5px;
+  width: 100%;  /* Full width cho dễ click */
+}
+
+button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  cursor: pointer;
+}
+
+button:hover {
+  background-color: #45a049;
+}
+
+#progress {
+  margin: 10px 0;
+}
+
+textarea {
+  width: 100%;
+  height: 150px;
+  margin-top: 10px;
+  border: 1px solid #ccc;
+  resize: none;  /* Ngăn resize để UI ổn định */
+}

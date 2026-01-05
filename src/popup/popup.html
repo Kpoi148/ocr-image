@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>OCR Text Extractor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h2>Trích xuất Text từ Ảnh</h2>
+  <input type="file" id="imageUpload" accept="image/*">
+  <button id="extractButton">Trích xuất Text</button>
+  <div id="progress" style="display: none;">Đang xử lý... <progress></progress></div>
+  <textarea id="resultText" placeholder="Text sẽ hiển thị ở đây" rows="10" cols="40" readonly></textarea>
+  
+  <!-- Load Tesseract.js từ local để phù hợp CSP của extension -->
+  <script src="../../assets/tesseractjs/tesseract.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
