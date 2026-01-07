@@ -59,7 +59,7 @@ manifest.json                 Manifest MV3
 1. Open `chrome://extensions`
 2. Enable Developer mode
 3. Click "Load unpacked"
-4. Select the folder `e:\JS\OCR-Extension`
+4. Select the folder you store
 
 No build step is required.
 
