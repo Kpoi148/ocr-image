@@ -24,22 +24,29 @@ The extension focuses on two main workflows:
 - Context menu: right click an image on a page to OCR quickly and show an overlay with results.
 
 ## Features
-- Offline OCR with Tesseract.js (local assets).
-- Language support: `eng+vie`.
-- Image preprocessing: grayscale + contrast + Otsu threshold.
-- On page overlay with copy and close actions.
-- SHA-256 cache to avoid redoing OCR.
-- Warm worker with auto termination when idle.
+- **Offline OCR** with Tesseract.js (local assets, no external API calls).
+- **Language support**: `eng+vie` (English + Vietnamese).
+- **Multi-pass OCR**: Dual-pass recognition (normal + color-inverted) to capture both light and dark colored text.
+- **Advanced noise reduction**: Heuristic filtering based on confidence scores, symbol density, and word length.
+- **Image preprocessing**: Grayscale conversion with adaptive contrast enhancement.
+- **Shadow DOM overlay**: Style-isolated result overlay prevents conflicts with host page CSS.
+- **Premium UI design**: Modern, responsive interface with smooth animations and glassmorphism aesthetics.
+- **Smart caching**: SHA-256 hash-based cache to avoid redundant OCR operations.
+- **Warm worker**: Persistent Tesseract worker with auto-termination after idle timeout.
 
 ## Architecture and flow
-OCR always runs in an offscreen document to match MV3 requirements.
+All OCR processing is centralized in the offscreen document, ensuring consistent performance and memory efficiency. Both the Popup and Context Menu workflows share the same warm Tesseract worker.
 
 ```
-User -> Context menu / Popup
-     -> background (service worker)
-     -> offscreen (Tesseract worker)
-     -> results / progress
-     -> content script overlay
+User → Popup / Context Menu
+     → Background Service Worker (message routing)
+     → Offscreen Document (Tesseract worker)
+        ├─ Multi-pass OCR (normal + inverted)
+        ├─ Heuristic noise filtering
+        └─ Result caching (SHA-256)
+     → Results forwarded to:
+        ├─ Popup UI
+        └─ Content Script (Shadow DOM overlay)
 ```
 
 ## Folder structure
@@ -88,9 +95,10 @@ Context menu:
 - Cache is stored in `chrome.storage.local` using image hashes.
 
 ## Performance and caching
-- Worker stays warm and auto terminates after ~5 minutes of idle time.
-- SHA-256 cache avoids rerunning OCR for the same image.
-- Queue processes OCR jobs sequentially to avoid overload.
+- **Multi-pass OCR**: Runs recognition twice (normal + inverted) to handle colored/stylized fonts, approximately 60% slower than single-pass but significantly more accurate.
+- **Warm worker**: Tesseract instance stays initialized and auto-terminates after ~5 minutes of idle time.
+- **SHA-256 caching**: Image content is hashed and cached to avoid redundant OCR operations on identical images.
+- **Sequential queue**: OCR jobs are processed one at a time to prevent memory overload.
 
 ## Configuration
 There is no settings UI yet. To disable debug logs, set `DEBUG = false` in:
@@ -99,9 +107,11 @@ There is no settings UI yet. To disable debug logs, set `DEBUG = false` in:
 - `src/offscreen/offscreen.js`
 
 ## Troubleshooting
-- Missing OCR menu: reload the page and make sure the page has an image.
-- OCR not running: check the Console, confirm the worker and wasm files load.
-- Images from restricted domains: may be blocked by CSP or CORS.
+- **Missing OCR menu**: Reload the page and ensure an image is present. The content script may not have initialized yet.
+- **OCR not running**: Check the Console (F12) and confirm Tesseract worker and WASM files load successfully.
+- **Images from restricted domains**: May be blocked by CSP or CORS policies.
+- **Stylized/3D fonts**: Multi-pass OCR helps but Tesseract has inherent limitations with highly stylized fonts (gradient, 3D effects, artistic typography). For better accuracy with such fonts, consider commercial OCR APIs (Google Vision, Azure Computer Vision).
+- **Empty results**: If noise filtering is too aggressive, results may be discarded. The extension uses smart fallback to return raw OCR output when filtered results are too short.
 
 ## Contributing
 PRs and issues are welcome. For large changes, please open an issue first.
