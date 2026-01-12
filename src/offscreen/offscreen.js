@@ -1,8 +1,8 @@
 const DEBUG = true;
 const PREPROCESS_OPTIONS = {
   grayscale: true,
-  contrast: 0.25,
-  threshold: true
+  contrast: 0.5, // Increased to enhance stylized/gradient fonts
+  threshold: false // Disabled to preserve gradient/shadow details for stylized fonts
 };
 const WORKER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -130,6 +130,12 @@ async function preprocessImage(blob, options) {
       gray = 128 + (gray - 128) * contrastFactor;
     }
     gray = clampByte(gray) | 0;
+
+    // Apply inversion if enabled
+    if (options.invert) {
+      gray = 255 - gray;
+    }
+
     data[i] = gray;
     data[i + 1] = gray;
     data[i + 2] = gray;
@@ -257,57 +263,47 @@ async function runOcrJob(job) {
     sendProgress(tabId, requestId, 'preprocessing', 1);
 
     const worker = await getWarmWorker(tabId, requestId);
-    const { data } = await worker.recognize(processedBlob);
 
-    // --- Advanced Heuristic Noise Reduction ---
-    const BASE_CONFIDENCE = 40;
-    const STRICT_CONFIDENCE = 70; // For short words
+    // --- Multi-pass OCR: Normal + Inverted ---
+    sendProgress(tabId, requestId, 'recognizing (pass 1/2)', 0.5);
+    const { data: data1 } = await worker.recognize(processedBlob);
 
-    // Helper: Calculate symbol density (non-alphanumeric chars)
-    const getSymbolDensity = (text) => {
-      const symbolCount = (text.match(/[^a-zA-Z0-9\s\u00C0-\u1EF9]/g) || []).length; // \u00C0-\u1EF9 range covers most Vietnamese chars
-      return symbolCount / text.length;
+    sendProgress(tabId, requestId, 'recognizing (pass 2/2)', 0.75);
+    const processedBlobInverted = await preprocessImage(imageBlob, { ...PREPROCESS_OPTIONS, invert: true });
+    const { data: data2 } = await worker.recognize(processedBlobInverted);
+
+    // Merge results: combine unique lines from both passes
+    const allLines = [
+      ...data1.lines.map(l => ({ text: l.text, confidence: l.confidence, words: l.words })),
+      ...data2.lines.map(l => ({ text: l.text, confidence: l.confidence, words: l.words }))
+    ];
+
+    // Filter and deduplicate
+    const filterLine = (line) => {
+      const validWords = line.words.filter(w => {
+        if (w.confidence < 40) return false;
+        if (w.text.length <= 2 && w.confidence < 50) return false;
+        if (w.text.length === 1 && /[^a-zA-Z0-9\u00C0-\u1EF9&]/.test(w.text) && w.confidence < 80) return false;
+        return true;
+      }).map(w => w.text);
+      return validWords.join(' ');
     };
 
-    const filteredText = data.paragraphs.map(p => {
-      return p.lines.map(line => {
-        // 1. Line-level first pass: Drop lines that are purely symbols
-        if (line.text.trim().length > 0 && getSymbolDensity(line.text) > 0.6) {
-          return null;
-        }
+    const seen = new Set();
+    const uniqueLines = allLines.map(line => {
+      const filtered = filterLine(line);
+      if (!filtered || filtered.length < 2) return null;
 
-        // 2. Word-level filtering
-        const validWords = line.words.filter(w => {
-          // Rule A: Base confidence check
-          if (w.confidence < BASE_CONFIDENCE) return false;
+      // Deduplicate by normalized text
+      const normalized = filtered.toLowerCase().replace(/\s+/g, ' ').trim();
+      if (seen.has(normalized)) return null;
+      seen.add(normalized);
 
-          // Rule B: Stricter confidence for very short words (1-2 chars) to remove specks
-          // Exception: If it looks like a number, we might be more lenient, but for now apply uniformly
-          if (w.text.length <= 2 && w.confidence < STRICT_CONFIDENCE) return false;
+      return filtered;
+    }).filter(l => l !== null);
 
-          // Rule C: Drop words that are just weird single symbols not common in text
-          if (w.text.length === 1 && /[^a-zA-Z0-9\u00C0-\u1EF9&]/.test(w.text)) {
-            // Allow '&' but block things like '|', '~', '`', etc unless super confident
-            if (w.confidence < 80) return false;
-          }
-
-          return true;
-        }).map(w => w.text);
-
-        if (validWords.length === 0) return null;
-
-        const lineText = validWords.join(' ');
-
-        // 3. Line-level second pass: final cleanup
-        // If line is very short (< 3 chars) and looks disconnected, drop it
-        if (lineText.length < 3 && lineText.match(/[^a-zA-Z0-9]/)) return null;
-
-        return lineText;
-
-      }).filter(l => l !== null).join('\n');
-    }).filter(p => p.trim().length > 0).join('\n\n');
-
-    const finalText = filteredText.trim().length > 0 ? filteredText : data.text; // Fallback only if we filtered EVERYTHING out
+    const mergedText = uniqueLines.join('\n');
+    const finalText = mergedText.length > 15 ? mergedText : (data1.text + '\n' + data2.text);
 
     await setCachedResult(imageHash, {
       text: finalText,
