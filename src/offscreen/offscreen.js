@@ -257,9 +257,60 @@ async function runOcrJob(job) {
     sendProgress(tabId, requestId, 'preprocessing', 1);
 
     const worker = await getWarmWorker(tabId, requestId);
-    const { data: { text } } = await worker.recognize(processedBlob);
+    const { data } = await worker.recognize(processedBlob);
+
+    // --- Advanced Heuristic Noise Reduction ---
+    const BASE_CONFIDENCE = 40;
+    const STRICT_CONFIDENCE = 70; // For short words
+
+    // Helper: Calculate symbol density (non-alphanumeric chars)
+    const getSymbolDensity = (text) => {
+      const symbolCount = (text.match(/[^a-zA-Z0-9\s\u00C0-\u1EF9]/g) || []).length; // \u00C0-\u1EF9 range covers most Vietnamese chars
+      return symbolCount / text.length;
+    };
+
+    const filteredText = data.paragraphs.map(p => {
+      return p.lines.map(line => {
+        // 1. Line-level first pass: Drop lines that are purely symbols
+        if (line.text.trim().length > 0 && getSymbolDensity(line.text) > 0.6) {
+          return null;
+        }
+
+        // 2. Word-level filtering
+        const validWords = line.words.filter(w => {
+          // Rule A: Base confidence check
+          if (w.confidence < BASE_CONFIDENCE) return false;
+
+          // Rule B: Stricter confidence for very short words (1-2 chars) to remove specks
+          // Exception: If it looks like a number, we might be more lenient, but for now apply uniformly
+          if (w.text.length <= 2 && w.confidence < STRICT_CONFIDENCE) return false;
+
+          // Rule C: Drop words that are just weird single symbols not common in text
+          if (w.text.length === 1 && /[^a-zA-Z0-9\u00C0-\u1EF9&]/.test(w.text)) {
+            // Allow '&' but block things like '|', '~', '`', etc unless super confident
+            if (w.confidence < 80) return false;
+          }
+
+          return true;
+        }).map(w => w.text);
+
+        if (validWords.length === 0) return null;
+
+        const lineText = validWords.join(' ');
+
+        // 3. Line-level second pass: final cleanup
+        // If line is very short (< 3 chars) and looks disconnected, drop it
+        if (lineText.length < 3 && lineText.match(/[^a-zA-Z0-9]/)) return null;
+
+        return lineText;
+
+      }).filter(l => l !== null).join('\n');
+    }).filter(p => p.trim().length > 0).join('\n\n');
+
+    const finalText = filteredText.trim().length > 0 ? filteredText : data.text; // Fallback only if we filtered EVERYTHING out
+
     await setCachedResult(imageHash, {
-      text,
+      text: finalText,
       srcUrl,
       createdAt: Date.now()
     });
@@ -267,7 +318,7 @@ async function runOcrJob(job) {
       action: 'ocr-result',
       tabId,
       requestId,
-      text
+      text: finalText
     });
     debugLog('job done', { tabId, requestId });
   } catch (error) {

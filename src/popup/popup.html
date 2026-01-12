@@ -1,24 +1,68 @@
 <!DOCTYPE html>
 <html lang="vi">
+<!DOCTYPE html>
+<html lang="vi">
 <head>
   <meta charset="UTF-8">
   <title>OCR Text Extractor</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <h2>Trích xuất Text từ Ảnh</h2>
-  <div id="dropZone" class="drop-zone" role="button" tabindex="0">
-    <div class="drop-zone__title">Kéo & thả ảnh vào đây</div>
-    <div class="drop-zone__hint">Bấm để chọn ảnh hoặc nhấn Ctrl+V để dán</div>
-    <div class="drop-zone__file" id="dropFileName"></div>
+  <div class="app-container">
+    <header class="app-header">
+      <div class="logo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M3 7V5C3 3.89543 3.89543 3 5 3H7M17 3H19C20.1046 3 21 3.89543 21 5V7M21 17V19C21 20.1046 20.1046 21 19 21H17M7 21H5C3.89543 21 3 20.1046 3 19V17M10 9H14M12 9V15M9 15H15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <h1>Smart OCR</h1>
+      </div>
+    </header>
+
+    <main class="app-content">
+      <div id="dropZone" class="drop-zone" role="button" tabindex="0">
+        <div class="drop-icon">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M12 12v9" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M16 16l-4-4-4 4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="drop-text">
+          <strong>Kéo thả ảnh</strong> hoặc <span>Copy/Paste</span>
+        </div>
+        <div class="drop-file" id="dropFileName"></div>
+      </div>
+      <input type="file" id="imageUpload" accept="image/*" hidden>
+
+      <button id="extractButton" class="btn-primary">
+        <span>Trích xuất Text</span>
+      </button>
+
+      <div id="progressContainer" class="progress-container" style="display: none;">
+        <div class="progress-info">
+          <span id="progressStatus">Đang xử lý...</span>
+          <span class="progress-percent">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+      </div>
+
+      <div class="result-area">
+        <div class="result-header">
+          <label>Kết quả trích xuất</label>
+          <button id="copyBtn" class="btn-icon" title="Copy Text">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            Copy
+          </button>
+        </div>
+        <textarea id="resultText" placeholder="Nội dung văn bản sẽ xuất hiện tại đây..." spellcheck="false"></textarea>
+      </div>
+    </main>
   </div>
-  <input type="file" id="imageUpload" accept="image/*" hidden>
-  <button id="extractButton">Trích xuất Text</button>
-  <div id="progress" style="display: none;">Đang xử lý... <progress></progress></div>
-  <textarea id="resultText" placeholder="Text sẽ hiển thị ở đây" rows="10" cols="40" readonly></textarea>
-  
-  <!-- Load Tesseract.js từ local để phù hợp CSP của extension -->
-  <script src="../../assets/tesseractjs/tesseract.min.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

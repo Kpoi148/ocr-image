@@ -123,15 +123,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.action === 'ocr-offscreen') {
     (async () => {
       try {
-        const tabId = _sender.tab?.id;
-        if (!tabId) {
-          sendResponse({ ok: false, error: 'Missing tabId' });
-          return;
-        }
+        const tabId = _sender.tab?.id || null; // Allow null (e.g. from popup)
         await ensureOffscreenDocument();
         debugLog('forward ocr-run to offscreen', {
           tabId,
-          requestId: message.requestId
+          requestId: message.requestId,
+          source: tabId ? 'content' : 'popup'
         });
         chrome.runtime.sendMessage({
           action: 'ocr-run',
@@ -147,15 +144,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
   if (message && (message.action === 'ocr-result' || message.action === 'ocr-error' || message.action === 'ocr-progress')) {
-    if (!message.tabId) {
-      return;
+    // If request came from a tab, forward result back to that tab
+    if (message.tabId) {
+      debugLog('forward result to tab', {
+        action: message.action,
+        tabId: message.tabId,
+        requestId: message.requestId
+      });
+      chrome.tabs.sendMessage(message.tabId, message, { frameId: 0 });
+    } else {
+        debugLog('broadcast result (popup)', { // Log for popup
+            action: message.action,
+            requestId: message.requestId
+        });
     }
-    debugLog('forward result to tab', {
-      action: message.action,
-      tabId: message.tabId,
-      requestId: message.requestId
-    });
-    chrome.tabs.sendMessage(message.tabId, message, { frameId: 0 });
     return;
   }
   if (!message || message.action !== 'fetch-image' || !message.url) {
