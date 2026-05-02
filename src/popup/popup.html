@@ -32,6 +32,11 @@
       </div>
       <input type="file" id="imageUpload" accept="image/*" hidden>
 
+      <div class="setting-row">
+        <label for="languageSelect">Ngôn ngữ OCR</label>
+        <select id="languageSelect" class="language-select"></select>
+      </div>
+
       <button id="extractButton" class="btn-primary">
         <span>Trích xuất Text</span>
       </button>
@@ -74,6 +79,7 @@
     </main>
   </div>
   <script src="../shared/actions.js"></script>
+  <script src="../shared/ocr-languages.js"></script>
   <script src="../shared/image-store.js"></script>
   <script src="../shared/ocr-state.js"></script>
   <script src="popup.js"></script>

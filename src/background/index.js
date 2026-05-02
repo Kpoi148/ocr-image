@@ -1,6 +1,7 @@
-importScripts('../shared/actions.js', '../shared/image-store.js', '../shared/ocr-state.js');
+importScripts('../shared/actions.js', '../shared/ocr-languages.js', '../shared/image-store.js', '../shared/ocr-state.js');
 
 const ACTIONS = globalThis.OcrActions;
+const LANGUAGES = globalThis.OcrLanguages;
 const OCR_MENU_ID = ACTIONS.OCR_IMAGE;
 const DEBUG = false;
 let offscreenCreating = null;
@@ -45,8 +46,12 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
-function startOcrInTab(tabId, srcUrl) {
-  const message = { action: ACTIONS.OCR_IMAGE, srcUrl };
+function startOcrInTab(tabId, srcUrl, language = LANGUAGES.DEFAULT_LANGUAGE) {
+  const message = {
+    action: ACTIONS.OCR_IMAGE,
+    srcUrl,
+    language: LANGUAGES.normalize(language)
+  };
   chrome.tabs.sendMessage(tabId, message, { frameId: 0 }, async () => {
     if (!chrome.runtime.lastError) {
       debugLog('message delivered to frame 0');
@@ -85,14 +90,15 @@ async function savePopupRequestStart(message) {
       text: '',
       error: '',
       cached: false,
-      source: message.imageStoreId ? 'popup-upload' : 'popup-url'
+      source: message.imageStoreId ? 'popup-upload' : 'popup-url',
+      language: LANGUAGES.normalize(message.language)
     });
   } catch (error) {
     debugLog('popup state start save failed', error.message);
   }
 }
 
-async function savePopupRequestFailure(requestId, errorMessage) {
+async function savePopupRequestFailure(requestId, errorMessage, language = LANGUAGES.DEFAULT_LANGUAGE) {
   try {
     await OcrPopupState.update({
       requestId,
@@ -100,7 +106,8 @@ async function savePopupRequestFailure(requestId, errorMessage) {
       statusText: 'Thất bại',
       progress: 0,
       error: errorMessage,
-      cached: false
+      cached: false,
+      language: LANGUAGES.normalize(language)
     });
   } catch (error) {
     debugLog('popup state failure save failed', error.message);
@@ -127,7 +134,8 @@ async function savePopupOcrMessage(message) {
         status: 'running',
         statusText: message.status || current?.statusText || 'Đang xử lý...',
         progress: typeof message.progress === 'number' ? message.progress : current?.progress || 0,
-        error: ''
+        error: '',
+        language: LANGUAGES.normalize(message.language || current?.language)
       });
       return;
     }
@@ -140,7 +148,8 @@ async function savePopupOcrMessage(message) {
         progress: 1,
         text: message.text || '',
         error: '',
-        cached: Boolean(message.cached)
+        cached: Boolean(message.cached),
+        language: LANGUAGES.normalize(message.language)
       });
       return;
     }
@@ -153,7 +162,8 @@ async function savePopupOcrMessage(message) {
         progress: 0,
         text: '',
         error: message.error || 'Unknown error',
-        cached: false
+        cached: false,
+        language: LANGUAGES.normalize(message.language)
       });
     }
   } catch (error) {
@@ -189,8 +199,9 @@ chrome.contextMenus.onClicked.addListener(info => {
         return;
       }
 
+      const language = await LANGUAGES.getStored();
       if (info.srcUrl) {
-        startOcrInTab(tabId, info.srcUrl);
+        startOcrInTab(tabId, info.srcUrl, language);
         return;
       }
 
@@ -209,7 +220,7 @@ chrome.contextMenus.onClicked.addListener(info => {
             return;
           }
           debugLog('last image lookup success', response.srcUrl);
-          startOcrInTab(tabId, response.srcUrl);
+          startOcrInTab(tabId, response.srcUrl, language);
         }
       );
     } catch (error) {
@@ -228,6 +239,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     (async () => {
       const tabId = _sender.tab?.id || null; // Allow null (e.g. from popup)
       const isPopupRequest = !tabId;
+      const language = LANGUAGES.normalize(message.language);
       try {
         if (isPopupRequest) {
           await savePopupRequestStart(message);
@@ -236,6 +248,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         debugLog('forward OCR job to offscreen', {
           tabId,
           requestId: message.requestId,
+          language,
           source: tabId ? 'content' : 'popup'
         });
         if (isPopupRequest) {
@@ -251,13 +264,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           tabId,
           srcUrl: message.srcUrl,
           imageStoreId: message.imageStoreId,
+          language,
           requestId: message.requestId
         });
         sendResponse({ ok: true });
       } catch (error) {
         if (isPopupRequest) {
           await cleanupTemporaryImage(message.imageStoreId);
-          await savePopupRequestFailure(message.requestId, error.message);
+          await savePopupRequestFailure(message.requestId, error.message, language);
         }
         sendResponse({ ok: false, error: error.message });
       }

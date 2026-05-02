@@ -302,7 +302,7 @@
   let isRunning = false;
   let activeRequestId = null;
 
-  async function runOcrForImage(srcUrl) {
+  async function runOcrForImage(srcUrl, language) {
     debugLog('run OCR for image', srcUrl);
 
     // Always recreate or reset
@@ -327,8 +327,13 @@
 
     activeRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+    const request = { action: ACTIONS.OCR_OFFSCREEN, srcUrl, requestId: activeRequestId };
+    if (language) {
+      request.language = language;
+    }
+
     chrome.runtime.sendMessage(
-      { action: ACTIONS.OCR_OFFSCREEN, srcUrl, requestId: activeRequestId },
+      request,
       response => {
         if (chrome.runtime.lastError) {
           ui.statusText.textContent = 'Lỗi kết nối';
@@ -357,7 +362,7 @@
     // Handle OCR messages
     // Image OCR requests always start a new job.
     if (message && message.action === ACTIONS.OCR_IMAGE && message.srcUrl) {
-      runOcrForImage(message.srcUrl);
+      runOcrForImage(message.srcUrl, message.language);
       return;
     }
 

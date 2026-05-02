@@ -124,6 +124,44 @@ body {
   color: var(--success);
 }
 
+/* Settings */
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.setting-row label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.language-select {
+  min-width: 170px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.language-select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.language-select:disabled {
+  color: var(--text-muted);
+  background: #f1f5f9;
+  cursor: not-allowed;
+}
+
 /* Button */
 .btn-primary {
   width: 100%;

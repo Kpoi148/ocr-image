@@ -26,7 +26,7 @@ The extension focuses on two main workflows:
 
 ## Features
 - **Offline OCR** with Tesseract.js (local assets, no external API calls).
-- **Language support**: `eng+vie` (English + Vietnamese).
+- **Language support**: `eng+vie` by default, with popup options for `vie` and `eng`.
 - **Multi-pass OCR**: Dual-pass recognition (normal + color-inverted) to capture both light and dark colored text.
 - **Advanced noise reduction**: Heuristic filtering based on confidence scores, symbol density, and word length.
 - **Image preprocessing**: Grayscale conversion with adaptive contrast enhancement.
@@ -76,7 +76,8 @@ No build step is required.
 Popup:
 1. Click the extension icon
 2. Drag and drop an image, click to select a file, or paste from the clipboard
-3. Click "Trích xuất Text"
+3. Choose the OCR language if needed
+4. Click "Trích xuất Text"
 
 Context menu:
 1. Right click an image on the page
@@ -95,16 +96,17 @@ Context menu:
 - OCR runs locally; no text is sent to a server.
 - Images may be fetched from their URLs for OCR, depending on the source.
 - Cache is stored in `chrome.storage.local` using image hashes.
+- The selected OCR language is stored in `chrome.storage.local`.
 - The latest popup OCR state is stored in `chrome.storage.session` so closing and reopening the popup can restore progress or results during the same browser session.
 
 ## Performance and caching
 - **Multi-pass OCR**: Runs recognition twice (normal + inverted) to handle colored/stylized fonts, approximately 60% slower than single-pass but significantly more accurate.
 - **Warm worker**: Tesseract instance stays initialized and auto-terminates after ~5 minutes of idle time.
-- **SHA-256 caching**: Image content is hashed and cached to avoid redundant OCR operations on identical images. Cache entries older than 7 days are pruned, and only the latest 100 OCR cache entries are kept.
+- **SHA-256 caching**: Image content is hashed and cached per OCR language to avoid redundant OCR operations on identical images. Cache entries older than 7 days are pruned, and only the latest 100 OCR cache entries are kept.
 - **Sequential queue**: OCR jobs are processed one at a time to prevent memory overload.
 
 ## Configuration
-There is no settings UI yet. Debug logs are disabled by default. To temporarily enable debug logs, set `DEBUG = true` in:
+The popup language selector supports `eng+vie`, `vie`, and `eng`; the selected language is saved in `chrome.storage.local` and reused by popup and context-menu OCR. Debug logs are disabled by default. To temporarily enable debug logs, set `DEBUG = true` in:
 - `src/background/index.js`
 - `src/content/content-ocr.js`
 - `src/offscreen/offscreen.js`

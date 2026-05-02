@@ -1,5 +1,6 @@
 const DEBUG = false;
 const ACTIONS = globalThis.OcrActions;
+const LANGUAGES = globalThis.OcrLanguages;
 const PREPROCESS_OPTIONS = {
   grayscale: true,
   contrast: 0.5, // Increased to enhance stylized/gradient fonts
@@ -12,6 +13,8 @@ const OCR_CACHE_MAX_ENTRIES = 100;
 
 let warmWorker = null;
 let warmWorkerPromise = null;
+let warmWorkerLanguage = null;
+let warmWorkerPromiseLanguage = null;
 let workerIdleTimer = null;
 let workerProgressContext = null;
 const memoryCache = new Map();
@@ -70,8 +73,12 @@ async function hashBlob(blob) {
   return bufferToHex(digest);
 }
 
-async function getCachedResult(hash) {
-  const key = `${OCR_CACHE_PREFIX}${hash}`;
+function getCacheKey(hash, language) {
+  return `${OCR_CACHE_PREFIX}${LANGUAGES.normalize(language)}:${hash}`;
+}
+
+async function getCachedResult(hash, language) {
+  const key = getCacheKey(hash, language);
   if (chrome?.storage?.local) {
     const data = await chrome.storage.local.get(key);
     return data[key] || null;
@@ -117,8 +124,8 @@ async function pruneCachedResults() {
   }
 }
 
-async function setCachedResult(hash, entry) {
-  const key = `${OCR_CACHE_PREFIX}${hash}`;
+async function setCachedResult(hash, language, entry) {
+  const key = getCacheKey(hash, language);
   if (chrome?.storage?.local) {
     await chrome.storage.local.set({ [key]: entry });
     await pruneCachedResults();
@@ -242,13 +249,14 @@ function getOcrLines(data) {
   }));
 }
 
-function sendProgress(tabId, requestId, status, progress) {
+function sendProgress(tabId, requestId, status, progress, language) {
   chrome.runtime.sendMessage({
     action: ACTIONS.OCR_PROGRESS,
     tabId,
     requestId,
     status,
-    progress
+    progress,
+    language: LANGUAGES.normalize(language)
   });
 }
 
@@ -261,7 +269,8 @@ function sendWorkerProgress(message) {
     workerProgressContext.tabId,
     workerProgressContext.requestId,
     message.status || '',
-    typeof message.progress === 'number' ? message.progress : null
+    typeof message.progress === 'number' ? message.progress : null,
+    workerProgressContext.language
   );
 }
 
@@ -285,19 +294,43 @@ function scheduleWorkerTermination() {
       debugLog('worker terminate error', error.message);
     } finally {
       warmWorker = null;
+      warmWorkerLanguage = null;
     }
   }, WORKER_IDLE_TIMEOUT_MS);
 }
 
-async function getWarmWorker() {
-  if (warmWorker) {
+async function terminateWarmWorker() {
+  if (!warmWorker) {
+    return;
+  }
+
+  try {
+    await warmWorker.terminate();
+  } catch (error) {
+    debugLog('worker terminate error', error.message);
+  } finally {
+    warmWorker = null;
+    warmWorkerLanguage = null;
+  }
+}
+
+async function getWarmWorker(language) {
+  const normalizedLanguage = LANGUAGES.normalize(language);
+  if (warmWorker && warmWorkerLanguage === normalizedLanguage) {
     return warmWorker;
   }
-  if (warmWorkerPromise) {
+
+  if (warmWorker) {
+    await terminateWarmWorker();
+  }
+
+  if (warmWorkerPromise && warmWorkerPromiseLanguage === normalizedLanguage) {
     return warmWorkerPromise;
   }
-  debugLog('creating warm worker');
-  warmWorkerPromise = Tesseract.createWorker('eng+vie', 1, {
+
+  debugLog('creating warm worker', normalizedLanguage);
+  warmWorkerPromiseLanguage = normalizedLanguage;
+  warmWorkerPromise = Tesseract.createWorker(normalizedLanguage, 1, {
     logger: sendWorkerProgress,
     workerPath: chrome.runtime.getURL('assets/tesseractjs/worker.min.js'),
     corePath: chrome.runtime.getURL('assets/tesseractjs/tesseract-core.wasm.js'),
@@ -307,50 +340,55 @@ async function getWarmWorker() {
 
   try {
     warmWorker = await warmWorkerPromise;
+    warmWorkerLanguage = normalizedLanguage;
     return warmWorker;
   } catch (error) {
     warmWorkerPromise = null;
+    warmWorkerPromiseLanguage = null;
     throw error;
   } finally {
     warmWorkerPromise = null;
+    warmWorkerPromiseLanguage = null;
   }
 }
 
 async function runOcrJob(job) {
   const { srcUrl, imageStoreId, tabId, requestId } = job;
-  debugLog('run job', { tabId, requestId, srcUrl, imageStoreId });
+  const language = LANGUAGES.normalize(job.language);
+  debugLog('run job', { tabId, requestId, srcUrl, imageStoreId, language });
 
   clearWorkerIdleTimer();
   try {
-    sendProgress(tabId, requestId, 'hashing', 0);
-    sendProgress(tabId, requestId, 'preprocessing', 0);
+    sendProgress(tabId, requestId, 'hashing', 0, language);
+    sendProgress(tabId, requestId, 'preprocessing', 0, language);
     const imageBlob = await getImageBlobForJob(job);
     const imageHash = await hashBlob(imageBlob);
-    sendProgress(tabId, requestId, 'hashing', 1);
-    const cached = await getCachedResult(imageHash);
+    sendProgress(tabId, requestId, 'hashing', 1, language);
+    const cached = await getCachedResult(imageHash, language);
     if (cached && cached.text) {
       chrome.runtime.sendMessage({
         action: ACTIONS.OCR_RESULT,
         tabId,
         requestId,
         text: cached.text,
-        cached: true
+        cached: true,
+        language
       });
       debugLog('cache hit', imageHash);
       scheduleWorkerTermination();
       return;
     }
     const processedBlob = await preprocessImage(imageBlob, PREPROCESS_OPTIONS);
-    sendProgress(tabId, requestId, 'preprocessing', 1);
+    sendProgress(tabId, requestId, 'preprocessing', 1, language);
 
-    workerProgressContext = { tabId, requestId };
-    const worker = await getWarmWorker();
+    workerProgressContext = { tabId, requestId, language };
+    const worker = await getWarmWorker(language);
 
     // --- Multi-pass OCR: Normal + Inverted ---
-    sendProgress(tabId, requestId, 'recognizing (pass 1/2)', 0.5);
+    sendProgress(tabId, requestId, 'recognizing (pass 1/2)', 0.5, language);
     const { data: data1 } = await worker.recognize(processedBlob);
 
-    sendProgress(tabId, requestId, 'recognizing (pass 2/2)', 0.75);
+    sendProgress(tabId, requestId, 'recognizing (pass 2/2)', 0.75, language);
     const processedBlobInverted = await preprocessImage(imageBlob, { ...PREPROCESS_OPTIONS, invert: true });
     const { data: data2 } = await worker.recognize(processedBlobInverted);
 
@@ -391,16 +429,18 @@ async function runOcrJob(job) {
     const rawText = [data1?.text, data2?.text].filter(Boolean).join('\n');
     const finalText = mergedText.length > 15 ? mergedText : rawText;
 
-    await setCachedResult(imageHash, {
+    await setCachedResult(imageHash, language, {
       text: finalText,
       srcUrl: srcUrl || 'popup-upload',
+      language,
       createdAt: Date.now()
     });
     chrome.runtime.sendMessage({
       action: ACTIONS.OCR_RESULT,
       tabId,
       requestId,
-      text: finalText
+      text: finalText,
+      language
     });
     debugLog('job done', { tabId, requestId });
   } catch (error) {
@@ -408,7 +448,8 @@ async function runOcrJob(job) {
       action: ACTIONS.OCR_ERROR,
       tabId,
       requestId,
-      error: error.message
+      error: error.message,
+      language
     });
     debugLog('job error', error.message);
   } finally {
@@ -440,7 +481,8 @@ chrome.runtime.onMessage.addListener(message => {
     srcUrl: message.srcUrl,
     imageStoreId: message.imageStoreId,
     tabId: message.tabId,
-    requestId: message.requestId
+    requestId: message.requestId,
+    language: message.language
   });
   processQueue();
 });

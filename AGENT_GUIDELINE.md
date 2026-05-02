@@ -35,6 +35,7 @@ Keep responsibilities separated by extension context:
   - Owns small dependency-free helpers shared by extension pages.
   - Keep shared scripts compatible with direct `<script>` loading and load them before dependent scripts.
   - Keep message action constants in `src/shared/actions.js` and use `OcrActions` instead of duplicated action strings.
+  - Keep OCR language options in `src/shared/ocr-languages.js` so popup, background, and offscreen stay aligned.
 
 - `assets/tesseractjs/*`
   - Treat bundled Tesseract files and language data as vendor assets.
@@ -64,9 +65,9 @@ Rules:
 ## OCR Pipeline Rules
 
 - Keep preprocessing deterministic and side-effect free.
-- Cache by image content hash, not by URL. URLs can change or serve different content.
+- Cache by image content hash plus OCR language, not by URL. URLs can change or serve different content.
 - When changing filters, preserve a fallback path for low-confidence or short OCR output.
-- Tesseract language support is currently `eng+vie`. Do not remove either language without updating README and UI copy.
+- The default Tesseract language profile is `eng+vie`. Keep supported popup language options aligned with bundled `.traineddata` files and `src/shared/ocr-languages.js`.
 - Report useful progress statuses for long steps: hashing, preprocessing, recognizing, cache hit, completion, and errors.
 
 ## Code Style

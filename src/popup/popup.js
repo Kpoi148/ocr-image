@@ -1,6 +1,7 @@
 // popup.js - Modernized with Message Passing & Premium UI Logic
 
 const ACTIONS = globalThis.OcrActions;
+const LANGUAGES = globalThis.OcrLanguages;
 const RUNNING_STATE_TIMEOUT_MS = 30 * 60 * 1000;
 const TEMP_IMAGE_MAX_AGE_MS = 60 * 60 * 1000;
 let activeRequestId = null;
@@ -17,9 +18,34 @@ const progressStatus = document.getElementById('progressStatus');
 const progressPercent = document.getElementById('progressPercent');
 const copyBtn = document.getElementById('copyBtn');
 const resetBtn = document.getElementById('resetBtn');
+const languageSelect = document.getElementById('languageSelect');
 
 function createImageStoreId() {
   return `popup-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function populateLanguageOptions() {
+  languageSelect.innerHTML = '';
+  LANGUAGES.OPTIONS.forEach(option => {
+    const element = document.createElement('option');
+    element.value = option.value;
+    element.textContent = option.label;
+    languageSelect.appendChild(element);
+  });
+}
+
+async function restoreLanguageSetting() {
+  populateLanguageOptions();
+  try {
+    languageSelect.value = await LANGUAGES.getStored();
+  } catch (error) {
+    console.error('Failed to restore OCR language', error);
+    languageSelect.value = LANGUAGES.DEFAULT_LANGUAGE;
+  }
+}
+
+function getSelectedLanguage() {
+  return LANGUAGES.normalize(languageSelect.value);
 }
 
 // Helper: Format Bytes
@@ -34,6 +60,7 @@ function formatBytes(bytes, decimals = 2) {
 
 // UI State Management
 function setProcessingState(isProcessing, statusText = '') {
+  languageSelect.disabled = isProcessing;
   if (isProcessing) {
     extractButton.disabled = true;
     extractButton.classList.add('btn-processing');
@@ -147,6 +174,7 @@ async function runOcr(source) {
     action: ACTIONS.OCR_OFFSCREEN,
     srcUrl: source.srcUrl,
     imageStoreId: source.imageStoreId,
+    language: getSelectedLanguage(),
     requestId: activeRequestId
   }, (response) => {
     if (chrome.runtime.lastError) {
@@ -246,8 +274,9 @@ function setSelectedFile(file) {
 }
 
 // Event Listeners
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   cleanupExpiredImages();
+  await restoreLanguageSetting();
 
   // Check for URL params (from context menu)
   const params = new URLSearchParams(window.location.search);
@@ -261,6 +290,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   restorePopupState();
+});
+
+languageSelect.addEventListener('change', () => {
+  LANGUAGES.setStored(languageSelect.value)
+    .then(language => {
+      languageSelect.value = language;
+    })
+    .catch(error => {
+      console.error('Failed to save OCR language', error);
+      languageSelect.value = LANGUAGES.DEFAULT_LANGUAGE;
+    });
 });
 
 extractButton.addEventListener('click', async () => {
