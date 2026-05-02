@@ -76,11 +76,11 @@ No build step is required.
 Popup:
 1. Click the extension icon
 2. Drag and drop an image, click to select a file, or paste from the clipboard
-3. Click "Trich xuat Text"
+3. Click "Trích xuất Text"
 
 Context menu:
 1. Right click an image on the page
-2. Select "OCR: Trich xuat text tu anh"
+2. Select "OCR: Trích xuất text từ ảnh"
 3. View results in the bottom right overlay
 
 ## Permissions and rationale

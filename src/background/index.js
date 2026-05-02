@@ -37,7 +37,7 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({
       id: OCR_MENU_ID,
-      title: 'OCR: Trich xuat text tu anh',
+      title: 'OCR: Trích xuất text từ ảnh',
       contexts: ['image']
     });
     debugLog('context menu created');
