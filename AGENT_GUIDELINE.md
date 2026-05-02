@@ -101,6 +101,7 @@ Rules:
 - Do not create a new Tesseract worker per request unless the warm-worker model is intentionally removed.
 - Avoid parallel OCR jobs by default.
 - Revoke object URLs when their lifecycle can be controlled.
+- Temporary popup image blobs must be cleaned up after use and stale entries should be pruned.
 - Avoid unnecessary base64 conversions for large images; prefer `Blob`, `ArrayBuffer`, and object URLs where appropriate.
 - Keep cache growth in mind when adding new cached data. If adding metadata or multiple result variants, consider eviction.
 

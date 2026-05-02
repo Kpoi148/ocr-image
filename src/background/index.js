@@ -109,6 +109,9 @@ async function savePopupRequestFailure(requestId, errorMessage) {
 async function savePopupOcrMessage(message) {
   try {
     const current = await OcrPopupState.get();
+    if (current?.status === 'cleared' && current.requestId === message.requestId) {
+      return;
+    }
     if (current?.requestId && current.requestId !== message.requestId) {
       return;
     }

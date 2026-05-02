@@ -5,6 +5,9 @@ const PREPROCESS_OPTIONS = {
   threshold: false // Disabled to preserve gradient/shadow details for stylized fonts
 };
 const WORKER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const OCR_CACHE_PREFIX = 'ocr:';
+const OCR_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const OCR_CACHE_MAX_ENTRIES = 100;
 
 let warmWorker = null;
 let warmWorkerPromise = null;
@@ -67,7 +70,7 @@ async function hashBlob(blob) {
 }
 
 async function getCachedResult(hash) {
-  const key = `ocr:${hash}`;
+  const key = `${OCR_CACHE_PREFIX}${hash}`;
   if (chrome?.storage?.local) {
     const data = await chrome.storage.local.get(key);
     return data[key] || null;
@@ -75,10 +78,49 @@ async function getCachedResult(hash) {
   return memoryCache.get(key) || null;
 }
 
+async function pruneCachedResults() {
+  if (!chrome?.storage?.local) {
+    return;
+  }
+
+  try {
+    const now = Date.now();
+    const data = await chrome.storage.local.get(null);
+    const entries = Object.entries(data)
+      .filter(([key, value]) => key.startsWith(OCR_CACHE_PREFIX) && value && typeof value === 'object')
+      .map(([key, value]) => ({
+        key,
+        createdAt: typeof value.createdAt === 'number' ? value.createdAt : 0
+      }));
+
+    const keysToRemove = new Set(
+      entries
+        .filter(entry => !entry.createdAt || now - entry.createdAt > OCR_CACHE_MAX_AGE_MS)
+        .map(entry => entry.key)
+    );
+
+    const freshEntries = entries
+      .filter(entry => !keysToRemove.has(entry.key))
+      .sort((a, b) => b.createdAt - a.createdAt);
+
+    freshEntries
+      .slice(OCR_CACHE_MAX_ENTRIES)
+      .forEach(entry => keysToRemove.add(entry.key));
+
+    if (keysToRemove.size) {
+      await chrome.storage.local.remove([...keysToRemove]);
+      debugLog('pruned OCR cache entries', keysToRemove.size);
+    }
+  } catch (error) {
+    debugLog('OCR cache prune error', error.message);
+  }
+}
+
 async function setCachedResult(hash, entry) {
-  const key = `ocr:${hash}`;
+  const key = `${OCR_CACHE_PREFIX}${hash}`;
   if (chrome?.storage?.local) {
     await chrome.storage.local.set({ [key]: entry });
+    await pruneCachedResults();
     return;
   }
   memoryCache.set(key, entry);

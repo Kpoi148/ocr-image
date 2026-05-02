@@ -203,6 +203,12 @@ body {
   color: var(--text-main);
 }
 
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .btn-icon {
   display: flex;
   align-items: center;
@@ -227,6 +233,12 @@ body {
   border-color: var(--success);
   color: var(--success);
   background: #f0fdf4;
+}
+
+.btn-icon--danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+  background: #fef2f2;
 }
 
 textarea {

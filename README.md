@@ -100,7 +100,7 @@ Context menu:
 ## Performance and caching
 - **Multi-pass OCR**: Runs recognition twice (normal + inverted) to handle colored/stylized fonts, approximately 60% slower than single-pass but significantly more accurate.
 - **Warm worker**: Tesseract instance stays initialized and auto-terminates after ~5 minutes of idle time.
-- **SHA-256 caching**: Image content is hashed and cached to avoid redundant OCR operations on identical images.
+- **SHA-256 caching**: Image content is hashed and cached to avoid redundant OCR operations on identical images. Cache entries older than 7 days are pruned, and only the latest 100 OCR cache entries are kept.
 - **Sequential queue**: OCR jobs are processed one at a time to prevent memory overload.
 
 ## Configuration

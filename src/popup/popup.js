@@ -1,6 +1,7 @@
 // popup.js - Modernized with Message Passing & Premium UI Logic
 
 const RUNNING_STATE_TIMEOUT_MS = 30 * 60 * 1000;
+const TEMP_IMAGE_MAX_AGE_MS = 60 * 60 * 1000;
 let activeRequestId = null;
 
 // DOM Elements
@@ -14,6 +15,7 @@ const progressBar = document.getElementById('progressBar');
 const progressStatus = document.getElementById('progressStatus');
 const progressPercent = document.getElementById('progressPercent');
 const copyBtn = document.getElementById('copyBtn');
+const resetBtn = document.getElementById('resetBtn');
 
 function createImageStoreId() {
   return `popup-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -125,6 +127,14 @@ async function cleanupStoredImage(imageStoreId) {
   }
 }
 
+async function cleanupExpiredImages() {
+  try {
+    await OcrImageStore.removeExpired(TEMP_IMAGE_MAX_AGE_MS);
+  } catch (error) {
+    console.error('Failed to clean expired temporary images', error);
+  }
+}
+
 async function runOcr(source) {
   if (activeRequestId) return; // Prevent double submit
 
@@ -173,6 +183,33 @@ function handleSuccess(text, isCached) {
   resultText.focus();
 }
 
+async function resetPopup() {
+  const ignoredRequestId = activeRequestId;
+  activeRequestId = null;
+
+  if (ignoredRequestId) {
+    await OcrPopupState.set({
+      requestId: ignoredRequestId,
+      status: 'cleared',
+      progress: 0,
+      text: '',
+      error: '',
+      cached: false
+    });
+  } else {
+    await OcrPopupState.clear();
+  }
+
+  setSelectedFile(null);
+  imageUpload.value = '';
+  resultText.value = '';
+  progressContainer.style.display = 'none';
+  progressStatus.textContent = 'Đang xử lý...';
+  progressBar.style.width = '0%';
+  progressPercent.textContent = '0%';
+  setProcessingState(false);
+}
+
 // Message Listener from Background/Offscreen
 chrome.runtime.onMessage.addListener((message) => {
   if (!activeRequestId || message.requestId !== activeRequestId) return;
@@ -209,6 +246,8 @@ function setSelectedFile(file) {
 
 // Event Listeners
 document.addEventListener('DOMContentLoaded', () => {
+  cleanupExpiredImages();
+
   // Check for URL params (from context menu)
   const params = new URLSearchParams(window.location.search);
   const srcParam = params.get('src');
@@ -234,6 +273,7 @@ extractButton.addEventListener('click', async () => {
     resultText.value = '';
 
     try {
+      await cleanupExpiredImages();
       await OcrImageStore.put(imageStoreId, selectedFile, {
         name: selectedFile.name,
         type: selectedFile.type,
@@ -249,6 +289,12 @@ extractButton.addEventListener('click', async () => {
     dropZone.style.borderColor = '#ff4444';
     setTimeout(() => dropZone.style.borderColor = '', 500);
   }
+});
+
+resetBtn.addEventListener('click', () => {
+  resetPopup().catch(error => {
+    console.error('Failed to reset popup', error);
+  });
 });
 
 copyBtn.addEventListener('click', async () => {

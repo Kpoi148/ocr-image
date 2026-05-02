@@ -308,6 +308,14 @@
     // If we want to support multiple overlays, we'd need ID management. 
     // For now, single overlay singleton is safer.
 
+    if (isRunning) {
+      const ui = ensureOverlay();
+      ui.overlay.style.display = 'flex';
+      ui.statusText.textContent = 'Đang có tiến trình chạy...';
+      return; // Or queue it?
+    }
+    isRunning = true;
+
     const ui = ensureOverlay();
     ui.overlay.style.display = 'flex'; // Reset display
     ui.progressBar.style.background = '';
@@ -315,12 +323,6 @@
     ui.percentText.textContent = '0%';
     ui.statusText.textContent = 'Đang gửi yêu cầu...';
     ui.resultText.value = '';
-
-    if (isRunning) {
-      ui.statusText.textContent = 'Đang có tiến trình chạy...';
-      return; // Or queue it?
-    }
-    isRunning = true;
 
     activeRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 

@@ -76,9 +76,41 @@
     });
   }
 
+  async function removeExpired(maxAgeMs) {
+    const db = await openDb();
+    const cutoff = Date.now() - maxAgeMs;
+
+    return new Promise((resolve, reject) => {
+      const removedIds = [];
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      const request = store.openCursor();
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          return;
+        }
+
+        const value = cursor.value;
+        if (typeof value?.createdAt !== 'number' || value.createdAt < cutoff) {
+          removedIds.push(value.id);
+          cursor.delete();
+        }
+        cursor.continue();
+      };
+
+      request.onerror = () => reject(request.error);
+      transaction.oncomplete = () => resolve(removedIds);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  }
+
   globalThis.OcrImageStore = {
     put,
     get,
-    remove
+    remove,
+    removeExpired
   };
 })();

@@ -49,13 +49,25 @@
       <div class="result-area">
         <div class="result-header">
           <label>Kết quả trích xuất</label>
-          <button id="copyBtn" class="btn-icon" title="Copy Text">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-            Copy
-          </button>
+          <div class="result-actions">
+            <button id="resetBtn" class="btn-icon btn-icon--danger" title="Xóa kết quả">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18"></path>
+                <path d="M8 6V4h8v2"></path>
+                <path d="M19 6l-1 14H6L5 6"></path>
+                <path d="M10 11v5"></path>
+                <path d="M14 11v5"></path>
+              </svg>
+              Xóa
+            </button>
+            <button id="copyBtn" class="btn-icon" title="Copy Text">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+              Copy
+            </button>
+          </div>
         </div>
         <textarea id="resultText" placeholder="Nội dung văn bản sẽ xuất hiện tại đây..." spellcheck="false"></textarea>
       </div>
