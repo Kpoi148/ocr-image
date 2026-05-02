@@ -1,4 +1,5 @@
 const DEBUG = false;
+const ACTIONS = globalThis.OcrActions;
 const PREPROCESS_OPTIONS = {
   grayscale: true,
   contrast: 0.5, // Increased to enhance stylized/gradient fonts
@@ -243,7 +244,7 @@ function getOcrLines(data) {
 
 function sendProgress(tabId, requestId, status, progress) {
   chrome.runtime.sendMessage({
-    action: 'ocr-progress',
+    action: ACTIONS.OCR_PROGRESS,
     tabId,
     requestId,
     status,
@@ -329,7 +330,7 @@ async function runOcrJob(job) {
     const cached = await getCachedResult(imageHash);
     if (cached && cached.text) {
       chrome.runtime.sendMessage({
-        action: 'ocr-result',
+        action: ACTIONS.OCR_RESULT,
         tabId,
         requestId,
         text: cached.text,
@@ -396,7 +397,7 @@ async function runOcrJob(job) {
       createdAt: Date.now()
     });
     chrome.runtime.sendMessage({
-      action: 'ocr-result',
+      action: ACTIONS.OCR_RESULT,
       tabId,
       requestId,
       text: finalText
@@ -404,7 +405,7 @@ async function runOcrJob(job) {
     debugLog('job done', { tabId, requestId });
   } catch (error) {
     chrome.runtime.sendMessage({
-      action: 'ocr-error',
+      action: ACTIONS.OCR_ERROR,
       tabId,
       requestId,
       error: error.message
@@ -432,7 +433,7 @@ async function processQueue() {
 }
 
 chrome.runtime.onMessage.addListener(message => {
-  if (!message || message.action !== 'ocr-run' || (!message.srcUrl && !message.imageStoreId)) {
+  if (!message || message.action !== ACTIONS.OCR_RUN || (!message.srcUrl && !message.imageStoreId)) {
     return;
   }
   queue.push({

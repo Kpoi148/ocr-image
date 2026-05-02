@@ -13,14 +13,15 @@
   };
 
   const HOST_ID = 'ocr-extension-host';
+  const ACTIONS = globalThis.OcrActions;
 
   debugLog('content script loaded', { url: window.location.href });
-  chrome.runtime.sendMessage({ action: 'content-ready', url: window.location.href }, response => {
+  chrome.runtime.sendMessage({ action: ACTIONS.CONTENT_READY, url: window.location.href }, response => {
     if (chrome.runtime.lastError) {
-      debugLog('content-ready send failed', chrome.runtime.lastError.message);
+      debugLog('content ready send failed', chrome.runtime.lastError.message);
       return;
     }
-    debugLog('content-ready ack', response);
+    debugLog('content ready ack', response);
   });
 
   function getImageUrlFromElement(element) {
@@ -327,7 +328,7 @@
     activeRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
     chrome.runtime.sendMessage(
-      { action: 'ocr-offscreen', srcUrl, requestId: activeRequestId },
+      { action: ACTIONS.OCR_OFFSCREEN, srcUrl, requestId: activeRequestId },
       response => {
         if (chrome.runtime.lastError) {
           ui.statusText.textContent = 'Lỗi kết nối';
@@ -348,16 +349,16 @@
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message && message.action === 'get-last-image') {
+    if (message && message.action === ACTIONS.GET_LAST_IMAGE) {
       sendResponse({ srcUrl: lastRightClickSrc });
       return;
     }
 
     // Handle OCR messages
-    // If it's an 'ocr-image' action, always start a new job
-    if (message && message.action === 'ocr-image' && message.srcUrl) {
+    // Image OCR requests always start a new job.
+    if (message && message.action === ACTIONS.OCR_IMAGE && message.srcUrl) {
       runOcrForImage(message.srcUrl);
-      return; // Do not process further in this listener for 'ocr-image'
+      return;
     }
 
     // For progress/result/error, ensure it matches the active request
@@ -367,16 +368,16 @@
 
     const ui = ensureOverlay();
 
-    if (message.action === 'ocr-progress') {
+    if (message.action === ACTIONS.OCR_PROGRESS) {
       updateProgress(message, ui);
-    } else if (message.action === 'ocr-result') {
+    } else if (message.action === ACTIONS.OCR_RESULT) {
       ui.statusText.textContent = message.cached ? 'Hoàn thành (Cache)' : 'Hoàn thành';
       ui.resultText.value = message.text || '';
       ui.progressBar.style.width = '100%';
       ui.percentText.textContent = '100%';
       isRunning = false;
       activeRequestId = null;
-    } else if (message.action === 'ocr-error') {
+    } else if (message.action === ACTIONS.OCR_ERROR) {
       ui.statusText.textContent = 'Thất bại';
       ui.resultText.value = message.error;
       ui.progressBar.style.width = '100%'; // Fill progress bar on error

@@ -1,5 +1,6 @@
 // popup.js - Modernized with Message Passing & Premium UI Logic
 
+const ACTIONS = globalThis.OcrActions;
 const RUNNING_STATE_TIMEOUT_MS = 30 * 60 * 1000;
 const TEMP_IMAGE_MAX_AGE_MS = 60 * 60 * 1000;
 let activeRequestId = null;
@@ -143,7 +144,7 @@ async function runOcr(source) {
   resultText.value = '';
 
   chrome.runtime.sendMessage({
-    action: 'ocr-offscreen',
+    action: ACTIONS.OCR_OFFSCREEN,
     srcUrl: source.srcUrl,
     imageStoreId: source.imageStoreId,
     requestId: activeRequestId
@@ -214,7 +215,7 @@ async function resetPopup() {
 chrome.runtime.onMessage.addListener((message) => {
   if (!activeRequestId || message.requestId !== activeRequestId) return;
 
-  if (message.action === 'ocr-progress') {
+  if (message.action === ACTIONS.OCR_PROGRESS) {
     const p = message.progress; // 0 to 1
     const s = message.status;
     if (typeof p === 'number') {
@@ -222,9 +223,9 @@ chrome.runtime.onMessage.addListener((message) => {
     } else {
       progressStatus.textContent = s;
     }
-  } else if (message.action === 'ocr-result') {
+  } else if (message.action === ACTIONS.OCR_RESULT) {
     handleSuccess(message.text, message.cached);
-  } else if (message.action === 'ocr-error') {
+  } else if (message.action === ACTIONS.OCR_ERROR) {
     handleError(message.error);
   }
 });

@@ -1,6 +1,7 @@
-importScripts('../shared/image-store.js', '../shared/ocr-state.js');
+importScripts('../shared/actions.js', '../shared/image-store.js', '../shared/ocr-state.js');
 
-const OCR_MENU_ID = 'ocr-image';
+const ACTIONS = globalThis.OcrActions;
+const OCR_MENU_ID = ACTIONS.OCR_IMAGE;
 const DEBUG = false;
 let offscreenCreating = null;
 
@@ -45,7 +46,7 @@ chrome.runtime.onInstalled.addListener(() => {
 });
 
 function startOcrInTab(tabId, srcUrl) {
-  const message = { action: 'ocr-image', srcUrl };
+  const message = { action: ACTIONS.OCR_IMAGE, srcUrl };
   chrome.tabs.sendMessage(tabId, message, { frameId: 0 }, async () => {
     if (!chrome.runtime.lastError) {
       debugLog('message delivered to frame 0');
@@ -55,7 +56,7 @@ function startOcrInTab(tabId, srcUrl) {
     const target = { tabId, frameIds: [0] };
     await chrome.scripting.executeScript({
       target,
-      files: ['src/content/content-ocr.js']
+      files: ['src/shared/actions.js', 'src/content/content-ocr.js']
     });
     debugLog('content script injected, retrying message');
     chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
@@ -116,7 +117,7 @@ async function savePopupOcrMessage(message) {
       return;
     }
 
-    if (message.action === 'ocr-progress') {
+    if (message.action === ACTIONS.OCR_PROGRESS) {
       if (current?.status === 'done' || current?.status === 'error') {
         return;
       }
@@ -131,7 +132,7 @@ async function savePopupOcrMessage(message) {
       return;
     }
 
-    if (message.action === 'ocr-result') {
+    if (message.action === ACTIONS.OCR_RESULT) {
       await OcrPopupState.set({
         requestId: message.requestId,
         status: 'done',
@@ -144,7 +145,7 @@ async function savePopupOcrMessage(message) {
       return;
     }
 
-    if (message.action === 'ocr-error') {
+    if (message.action === ACTIONS.OCR_ERROR) {
       await OcrPopupState.set({
         requestId: message.requestId,
         status: 'error',
@@ -196,18 +197,18 @@ chrome.contextMenus.onClicked.addListener(info => {
       debugLog('srcUrl missing, asking content script');
       chrome.tabs.sendMessage(
         tabId,
-        { action: 'get-last-image' },
+        { action: ACTIONS.GET_LAST_IMAGE },
         { frameId: 0 },
         response => {
           if (chrome.runtime.lastError) {
-            debugLog('get-last-image failed', chrome.runtime.lastError.message);
+            debugLog('last image lookup failed', chrome.runtime.lastError.message);
             return;
           }
           if (!response?.srcUrl) {
-            debugLog('get-last-image empty response');
+            debugLog('last image lookup returned empty response');
             return;
           }
-          debugLog('get-last-image success', response.srcUrl);
+          debugLog('last image lookup success', response.srcUrl);
           startOcrInTab(tabId, response.srcUrl);
         }
       );
@@ -218,12 +219,12 @@ chrome.contextMenus.onClicked.addListener(info => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message && message.action === 'content-ready') {
-    debugLog('content-ready', message.url);
+  if (message && message.action === ACTIONS.CONTENT_READY) {
+    debugLog('content script ready', message.url);
     sendResponse({ ok: true });
     return;
   }
-  if (message && message.action === 'ocr-offscreen') {
+  if (message && message.action === ACTIONS.OCR_OFFSCREEN) {
     (async () => {
       const tabId = _sender.tab?.id || null; // Allow null (e.g. from popup)
       const isPopupRequest = !tabId;
@@ -232,7 +233,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           await savePopupRequestStart(message);
         }
         await ensureOffscreenDocument();
-        debugLog('forward ocr-run to offscreen', {
+        debugLog('forward OCR job to offscreen', {
           tabId,
           requestId: message.requestId,
           source: tabId ? 'content' : 'popup'
@@ -246,7 +247,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           });
         }
         chrome.runtime.sendMessage({
-          action: 'ocr-run',
+          action: ACTIONS.OCR_RUN,
           tabId,
           srcUrl: message.srcUrl,
           imageStoreId: message.imageStoreId,
@@ -263,7 +264,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     })();
     return true;
   }
-  if (message && (message.action === 'ocr-result' || message.action === 'ocr-error' || message.action === 'ocr-progress')) {
+  if (message && (message.action === ACTIONS.OCR_RESULT || message.action === ACTIONS.OCR_ERROR || message.action === ACTIONS.OCR_PROGRESS)) {
     (async () => {
       // If request came from a tab, forward result back to that tab
       if (message.tabId !== null && message.tabId !== undefined) {

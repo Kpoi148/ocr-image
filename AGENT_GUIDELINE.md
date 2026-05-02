@@ -34,6 +34,7 @@ Keep responsibilities separated by extension context:
 - `src/shared/*`
   - Owns small dependency-free helpers shared by extension pages.
   - Keep shared scripts compatible with direct `<script>` loading and load them before dependent scripts.
+  - Keep message action constants in `src/shared/actions.js` and use `OcrActions` instead of duplicated action strings.
 
 - `assets/tesseractjs/*`
   - Treat bundled Tesseract files and language data as vendor assets.
@@ -78,6 +79,7 @@ Rules:
 - Keep comments short and useful. Explain non-obvious extension constraints, not what each line does.
 - Do not leave unused constants, dead handlers, duplicate markup, or debug-only branches in production paths.
 - Keep naming consistent with existing actions and files: `ocr-*`, `requestId`, `srcUrl`, `tabId`.
+- Use shared action constants for message contracts instead of repeating string literals across files.
 
 ## UI Rules
 
