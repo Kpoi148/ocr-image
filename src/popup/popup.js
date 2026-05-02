@@ -12,6 +12,7 @@ const imageUpload = document.getElementById('imageUpload');
 const progressContainer = document.getElementById('progressContainer');
 const progressBar = document.getElementById('progressBar');
 const progressStatus = document.getElementById('progressStatus');
+const progressPercent = document.getElementById('progressPercent');
 const copyBtn = document.getElementById('copyBtn');
 
 // Helper: Format Bytes
@@ -33,6 +34,7 @@ function setProcessingState(isProcessing, statusText = '') {
     progressContainer.style.display = 'block';
     progressStatus.textContent = statusText || 'Đang khởi tạo...';
     progressBar.style.width = '0%';
+    progressPercent.textContent = '0%';
     resultText.classList.add('processing');
   } else {
     extractButton.disabled = false;
@@ -43,7 +45,10 @@ function setProcessingState(isProcessing, statusText = '') {
 }
 
 function updateProgress(percent, text) {
-  progressBar.style.width = `${percent * 100}%`;
+  const normalizedPercent = Math.max(0, Math.min(1, percent));
+  const displayPercent = Math.round(normalizedPercent * 100);
+  progressBar.style.width = `${displayPercent}%`;
+  progressPercent.textContent = `${displayPercent}%`;
   if (text) progressStatus.textContent = text;
 }
 
@@ -77,6 +82,7 @@ function handleError(msg) {
   activeRequestId = null;
   resultText.value = `⚠️ Lỗi: ${msg}`;
   progressStatus.textContent = 'Thất bại';
+  progressPercent.textContent = '0%';
   progressContainer.style.display = 'none'; // Hide progress on error after delay? Or keep red?
 }
 
@@ -86,6 +92,7 @@ function handleSuccess(text, isCached) {
   resultText.value = text;
   progressStatus.textContent = isCached ? 'Hoàn thành (Cache)' : 'Hoàn thành';
   progressBar.style.width = '100%';
+  progressPercent.textContent = '100%';
 
   // Auto-focus result for easy copy
   resultText.focus();

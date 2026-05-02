@@ -22,9 +22,12 @@ async function ensureOffscreenDocument() {
     reasons: ['DOM_PARSER'],
     justification: 'Run OCR with Tesseract in extension context.'
   });
-  await offscreenCreating;
-  offscreenCreating = null;
-  debugLog('offscreen document ready');
+  try {
+    await offscreenCreating;
+    debugLog('offscreen document ready');
+  } finally {
+    offscreenCreating = null;
+  }
 }
 
 chrome.runtime.onInstalled.addListener(() => {

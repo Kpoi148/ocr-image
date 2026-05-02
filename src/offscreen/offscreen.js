@@ -9,6 +9,7 @@ const WORKER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 let warmWorker = null;
 let warmWorkerPromise = null;
 let workerIdleTimer = null;
+let workerProgressContext = null;
 const memoryCache = new Map();
 
 function debugLog(...args) {
@@ -175,6 +176,19 @@ function sendProgress(tabId, requestId, status, progress) {
   });
 }
 
+function sendWorkerProgress(message) {
+  if (!workerProgressContext || !message || (!message.status && typeof message.progress !== 'number')) {
+    return;
+  }
+
+  sendProgress(
+    workerProgressContext.tabId,
+    workerProgressContext.requestId,
+    message.status || '',
+    typeof message.progress === 'number' ? message.progress : null
+  );
+}
+
 function clearWorkerIdleTimer() {
   if (workerIdleTimer) {
     clearTimeout(workerIdleTimer);
@@ -199,7 +213,7 @@ function scheduleWorkerTermination() {
   }, WORKER_IDLE_TIMEOUT_MS);
 }
 
-async function getWarmWorker(tabId, requestId) {
+async function getWarmWorker() {
   if (warmWorker) {
     return warmWorker;
   }
@@ -208,16 +222,7 @@ async function getWarmWorker(tabId, requestId) {
   }
   debugLog('creating warm worker');
   warmWorkerPromise = Tesseract.createWorker('eng+vie', 1, {
-    logger: message => {
-      if (message && (message.status || typeof message.progress === 'number')) {
-        sendProgress(
-          tabId,
-          requestId,
-          message.status || '',
-          typeof message.progress === 'number' ? message.progress : null
-        );
-      }
-    },
+    logger: sendWorkerProgress,
     workerPath: chrome.runtime.getURL('assets/tesseractjs/worker.min.js'),
     corePath: chrome.runtime.getURL('assets/tesseractjs/tesseract-core.wasm.js'),
     langPath: chrome.runtime.getURL('assets/tesseractjs/lang-data'),
@@ -262,7 +267,8 @@ async function runOcrJob(job) {
     const processedBlob = await preprocessImage(imageBlob, PREPROCESS_OPTIONS);
     sendProgress(tabId, requestId, 'preprocessing', 1);
 
-    const worker = await getWarmWorker(tabId, requestId);
+    workerProgressContext = { tabId, requestId };
+    const worker = await getWarmWorker();
 
     // --- Multi-pass OCR: Normal + Inverted ---
     sendProgress(tabId, requestId, 'recognizing (pass 1/2)', 0.5);
@@ -326,6 +332,7 @@ async function runOcrJob(job) {
     });
     debugLog('job error', error.message);
   } finally {
+    workerProgressContext = null;
     scheduleWorkerTermination();
   }
 }
