@@ -14,6 +14,7 @@ Extract text from images directly in the browser (Chrome Extension MV3). OCR run
 - Performance and caching
 - Configuration
 - Troubleshooting
+- Agent guideline
 - Contributing
 - Links
 - License
@@ -112,6 +113,9 @@ There is no settings UI yet. To disable debug logs, set `DEBUG = false` in:
 - **Images from restricted domains**: May be blocked by CSP or CORS policies.
 - **Stylized/3D fonts**: Multi-pass OCR helps but Tesseract has inherent limitations with highly stylized fonts (gradient, 3D effects, artistic typography). For better accuracy with such fonts, consider commercial OCR APIs (Google Vision, Azure Computer Vision).
 - **Empty results**: If noise filtering is too aggressive, results may be discarded. The extension uses smart fallback to return raw OCR output when filtered results are too short.
+
+## Agent guideline
+Project architecture, clean-code rules, privacy rules, and manual test expectations are documented in `AGENT_GUIDELINE.md`.
 
 ## Contributing
 PRs and issues are welcome. For large changes, please open an issue first.
