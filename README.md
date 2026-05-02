@@ -104,7 +104,7 @@ Context menu:
 - **Sequential queue**: OCR jobs are processed one at a time to prevent memory overload.
 
 ## Configuration
-There is no settings UI yet. To disable debug logs, set `DEBUG = false` in:
+There is no settings UI yet. Debug logs are disabled by default. To temporarily enable debug logs, set `DEBUG = true` in:
 - `src/background/index.js`
 - `src/content/content-ocr.js`
 - `src/offscreen/offscreen.js`

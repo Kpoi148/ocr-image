@@ -1,7 +1,7 @@
 importScripts('../shared/image-store.js', '../shared/ocr-state.js');
 
 const OCR_MENU_ID = 'ocr-image';
-const DEBUG = true;
+const DEBUG = false;
 let offscreenCreating = null;
 
 function debugLog(...args) {
@@ -281,26 +281,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     })();
     return true;
   }
-  if (!message || message.action !== 'fetch-image' || !message.url) {
-    return;
-  }
-
-  (async () => {
-    try {
-      debugLog('fetch-image request', message.url);
-      const response = await fetch(message.url, { credentials: 'include' });
-      if (!response.ok) {
-        throw new Error(`Khong the tai anh (${response.status})`);
-      }
-      const buffer = await response.arrayBuffer();
-      const contentType = response.headers.get('content-type') || 'application/octet-stream';
-      sendResponse({ ok: true, buffer, contentType });
-      debugLog('fetch-image success', { contentType, bytes: buffer.byteLength });
-    } catch (error) {
-      debugLog('fetch-image error', error.message);
-      sendResponse({ ok: false, error: error.message });
-    }
-  })();
-
-  return true;
 });

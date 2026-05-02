@@ -5,7 +5,7 @@
   window.__ocrContentScriptReady = true;
   document.documentElement.setAttribute('data-ocr-ready', 'true');
 
-  const DEBUG = true;
+  const DEBUG = false;
   const debugLog = (...args) => {
     if (DEBUG) {
       console.log('[OCR]', ...args);

@@ -1,6 +1,5 @@
 // popup.js - Modernized with Message Passing & Premium UI Logic
 
-const EXTENSION_ID = chrome.runtime.id;
 const RUNNING_STATE_TIMEOUT_MS = 30 * 60 * 1000;
 let activeRequestId = null;
 

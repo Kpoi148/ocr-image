@@ -1,4 +1,4 @@
-const DEBUG = true;
+const DEBUG = false;
 const PREPROCESS_OPTIONS = {
   grayscale: true,
   contrast: 0.5, // Increased to enhance stylized/gradient fonts
@@ -190,6 +190,15 @@ async function preprocessImage(blob, options) {
   });
 }
 
+function getOcrLines(data) {
+  const lines = Array.isArray(data?.lines) ? data.lines : [];
+  return lines.map(line => ({
+    text: line?.text || '',
+    confidence: typeof line?.confidence === 'number' ? line.confidence : 0,
+    words: Array.isArray(line?.words) ? line.words : []
+  }));
+}
+
 function sendProgress(tabId, requestId, status, progress) {
   chrome.runtime.sendMessage({
     action: 'ocr-progress',
@@ -304,16 +313,19 @@ async function runOcrJob(job) {
 
     // Merge results: combine unique lines from both passes
     const allLines = [
-      ...data1.lines.map(l => ({ text: l.text, confidence: l.confidence, words: l.words })),
-      ...data2.lines.map(l => ({ text: l.text, confidence: l.confidence, words: l.words }))
+      ...getOcrLines(data1),
+      ...getOcrLines(data2)
     ];
 
     // Filter and deduplicate
     const filterLine = (line) => {
       const validWords = line.words.filter(w => {
-        if (w.confidence < 40) return false;
-        if (w.text.length <= 2 && w.confidence < 50) return false;
-        if (w.text.length === 1 && /[^a-zA-Z0-9\u00C0-\u1EF9&]/.test(w.text) && w.confidence < 80) return false;
+        const text = typeof w?.text === 'string' ? w.text : '';
+        const confidence = typeof w?.confidence === 'number' ? w.confidence : 0;
+        if (!text) return false;
+        if (confidence < 40) return false;
+        if (text.length <= 2 && confidence < 50) return false;
+        if (text.length === 1 && /[^a-zA-Z0-9\u00C0-\u1EF9&]/.test(text) && confidence < 80) return false;
         return true;
       }).map(w => w.text);
       return validWords.join(' ');
@@ -333,7 +345,8 @@ async function runOcrJob(job) {
     }).filter(l => l !== null);
 
     const mergedText = uniqueLines.join('\n');
-    const finalText = mergedText.length > 15 ? mergedText : (data1.text + '\n' + data2.text);
+    const rawText = [data1?.text, data2?.text].filter(Boolean).join('\n');
+    const finalText = mergedText.length > 15 ? mergedText : rawText;
 
     await setCachedResult(imageHash, {
       text: finalText,
