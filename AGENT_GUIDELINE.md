@@ -31,6 +31,10 @@ Keep responsibilities separated by extension context:
   - Owns popup UI, local file selection, drag/drop, paste handling, progress display, copy behavior, and sending OCR requests.
   - Reuse the shared background/offscreen OCR flow instead of creating a separate OCR path.
 
+- `src/shared/*`
+  - Owns small dependency-free helpers shared by extension pages.
+  - Keep shared scripts compatible with direct `<script>` loading and load them before dependent scripts.
+
 - `assets/tesseractjs/*`
   - Treat bundled Tesseract files and language data as vendor assets.
   - Do not edit minified/vendor files manually. Replace them only as a deliberate dependency update.
@@ -53,6 +57,7 @@ Rules:
 - Progress, result, and error messages must preserve the same `requestId`.
 - Tab-originated requests must include `tabId` so background can forward results to the correct page.
 - Popup-originated requests may use `tabId: null`; popup should filter by `requestId`.
+- Background must persist popup-originated OCR state so closing and reopening the popup does not lose in-flight progress or the latest result.
 - Avoid adding broadcast messages unless the receiving side has strict filtering.
 
 ## OCR Pipeline Rules
@@ -89,6 +94,7 @@ Rules:
 - Avoid `eval`, remote scripts, inline dynamic script injection, or new CSP relaxations unless there is a documented Chrome Extension requirement.
 - Do not log recognized text by default.
 - Debug logs should be easy to disable and should not expose private OCR output.
+- Prefer `chrome.storage.session` for restoring recent OCR UI state. Use `chrome.storage.local` for OCR text only when long-lived persistence is explicitly requested.
 
 ## Performance Rules
 

@@ -1,6 +1,7 @@
 // popup.js - Modernized with Message Passing & Premium UI Logic
 
 const EXTENSION_ID = chrome.runtime.id;
+const RUNNING_STATE_TIMEOUT_MS = 30 * 60 * 1000;
 let activeRequestId = null;
 
 // DOM Elements
@@ -14,6 +15,10 @@ const progressBar = document.getElementById('progressBar');
 const progressStatus = document.getElementById('progressStatus');
 const progressPercent = document.getElementById('progressPercent');
 const copyBtn = document.getElementById('copyBtn');
+
+function createImageStoreId() {
+  return `popup-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 
 // Helper: Format Bytes
 function formatBytes(bytes, decimals = 2) {
@@ -52,8 +57,76 @@ function updateProgress(percent, text) {
   if (text) progressStatus.textContent = text;
 }
 
+function renderDoneState(state) {
+  setProcessingState(false);
+  progressContainer.style.display = 'block';
+  progressStatus.textContent = state.statusText || (state.cached ? 'Hoàn thành (Cache)' : 'Hoàn thành');
+  progressBar.style.width = '100%';
+  progressPercent.textContent = '100%';
+  resultText.value = state.text || '';
+}
+
+function renderErrorState(state) {
+  setProcessingState(false);
+  progressStatus.textContent = state.statusText || 'Thất bại';
+  progressPercent.textContent = '0%';
+  progressContainer.style.display = 'none';
+  resultText.value = `⚠️ Lỗi: ${state.error || 'Unknown error'}`;
+}
+
+async function restorePopupState() {
+  try {
+    const state = await OcrPopupState.get();
+    if (!state?.requestId) {
+      return;
+    }
+
+    if (state.status === 'running') {
+      const isStale = state.updatedAt && Date.now() - state.updatedAt > RUNNING_STATE_TIMEOUT_MS;
+      if (isStale) {
+        const staleState = await OcrPopupState.update({
+          requestId: state.requestId,
+          status: 'error',
+          statusText: 'Thất bại',
+          progress: 0,
+          error: 'Tiến trình OCR trước đó đã quá thời gian chờ'
+        });
+        renderErrorState(staleState);
+        return;
+      }
+
+      activeRequestId = state.requestId;
+      setProcessingState(true, state.statusText || 'Đang xử lý...');
+      updateProgress(typeof state.progress === 'number' ? state.progress : 0, state.statusText);
+      resultText.value = state.text || '';
+      return;
+    }
+
+    activeRequestId = null;
+    if (state.status === 'done') {
+      renderDoneState(state);
+    } else if (state.status === 'error') {
+      renderErrorState(state);
+    }
+  } catch (error) {
+    console.error('Failed to restore popup state', error);
+  }
+}
+
 // Core OCR Logic via Background
-async function runOcr(srcUrl) {
+async function cleanupStoredImage(imageStoreId) {
+  if (!imageStoreId) {
+    return;
+  }
+
+  try {
+    await OcrImageStore.remove(imageStoreId);
+  } catch (error) {
+    console.error('Failed to clean temporary image', error);
+  }
+}
+
+async function runOcr(source) {
   if (activeRequestId) return; // Prevent double submit
 
   activeRequestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -62,14 +135,17 @@ async function runOcr(srcUrl) {
 
   chrome.runtime.sendMessage({
     action: 'ocr-offscreen',
-    srcUrl: srcUrl,
+    srcUrl: source.srcUrl,
+    imageStoreId: source.imageStoreId,
     requestId: activeRequestId
   }, (response) => {
     if (chrome.runtime.lastError) {
+      cleanupStoredImage(source.imageStoreId);
       handleError(chrome.runtime.lastError.message);
       return;
     }
     if (!response?.ok) {
+      cleanupStoredImage(source.imageStoreId);
       handleError(response?.error || 'Không thể khởi tạo OCR');
       return;
     }
@@ -141,16 +217,34 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mode: Opened via Context Menu (less common now with Overlay, but good fallback)
     // Or if we want to support "Open in Popup" action
     dropZone.style.display = 'none';
-    runOcr(srcParam);
+    runOcr({ srcUrl: srcParam });
+    return;
   }
+
+  restorePopupState();
 });
 
-extractButton.addEventListener('click', () => {
+extractButton.addEventListener('click', async () => {
   if (selectedFile) {
-    const objectUrl = URL.createObjectURL(selectedFile);
-    runOcr(objectUrl);
-    // Note: objectUrl needs to be revoked eventually, but for popup life it's okay. 
-    // Ideally revoke when job done.
+    if (activeRequestId) {
+      return;
+    }
+
+    const imageStoreId = createImageStoreId();
+    setProcessingState(true, 'Đang chuẩn bị ảnh...');
+    resultText.value = '';
+
+    try {
+      await OcrImageStore.put(imageStoreId, selectedFile, {
+        name: selectedFile.name,
+        type: selectedFile.type,
+        size: selectedFile.size
+      });
+      runOcr({ imageStoreId });
+    } catch (error) {
+      await cleanupStoredImage(imageStoreId);
+      handleError(error.message || 'Không thể chuẩn bị ảnh');
+    }
   } else {
     // Shake animation or alert
     dropZone.style.borderColor = '#ff4444';

@@ -26,6 +26,30 @@ async function fetchImageBlob(url) {
   return await response.blob();
 }
 
+async function getImageBlobForJob(job) {
+  if (job.imageStoreId) {
+    const blob = await OcrImageStore.get(job.imageStoreId);
+    if (!blob) {
+      throw new Error('Khong tim thay anh trong bo nho tam');
+    }
+    return blob;
+  }
+
+  return fetchImageBlob(job.srcUrl);
+}
+
+async function cleanupJobImage(job) {
+  if (!job.imageStoreId) {
+    return;
+  }
+
+  try {
+    await OcrImageStore.remove(job.imageStoreId);
+  } catch (error) {
+    debugLog('temporary image cleanup error', error.message);
+  }
+}
+
 function bufferToHex(buffer) {
   const bytes = new Uint8Array(buffer);
   let hex = '';
@@ -241,14 +265,14 @@ async function getWarmWorker() {
 }
 
 async function runOcrJob(job) {
-  const { srcUrl, tabId, requestId } = job;
-  debugLog('run job', { tabId, requestId, srcUrl });
+  const { srcUrl, imageStoreId, tabId, requestId } = job;
+  debugLog('run job', { tabId, requestId, srcUrl, imageStoreId });
 
   clearWorkerIdleTimer();
   try {
     sendProgress(tabId, requestId, 'hashing', 0);
     sendProgress(tabId, requestId, 'preprocessing', 0);
-    const imageBlob = await fetchImageBlob(srcUrl);
+    const imageBlob = await getImageBlobForJob(job);
     const imageHash = await hashBlob(imageBlob);
     sendProgress(tabId, requestId, 'hashing', 1);
     const cached = await getCachedResult(imageHash);
@@ -313,7 +337,7 @@ async function runOcrJob(job) {
 
     await setCachedResult(imageHash, {
       text: finalText,
-      srcUrl,
+      srcUrl: srcUrl || 'popup-upload',
       createdAt: Date.now()
     });
     chrome.runtime.sendMessage({
@@ -333,6 +357,7 @@ async function runOcrJob(job) {
     debugLog('job error', error.message);
   } finally {
     workerProgressContext = null;
+    await cleanupJobImage(job);
     scheduleWorkerTermination();
   }
 }
@@ -352,11 +377,12 @@ async function processQueue() {
 }
 
 chrome.runtime.onMessage.addListener(message => {
-  if (!message || message.action !== 'ocr-run' || !message.srcUrl) {
+  if (!message || message.action !== 'ocr-run' || (!message.srcUrl && !message.imageStoreId)) {
     return;
   }
   queue.push({
     srcUrl: message.srcUrl,
+    imageStoreId: message.imageStoreId,
     tabId: message.tabId,
     requestId: message.requestId
   });

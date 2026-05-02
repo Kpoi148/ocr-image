@@ -310,6 +310,7 @@
 
     const ui = ensureOverlay();
     ui.overlay.style.display = 'flex'; // Reset display
+    ui.progressBar.style.background = '';
     ui.progressBar.style.width = '0%';
     ui.percentText.textContent = '0%';
     ui.statusText.textContent = 'Đang gửi yêu cầu...';

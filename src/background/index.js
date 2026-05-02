@@ -1,3 +1,5 @@
+importScripts('../shared/image-store.js', '../shared/ocr-state.js');
+
 const OCR_MENU_ID = 'ocr-image';
 const DEBUG = true;
 let offscreenCreating = null;
@@ -58,6 +60,101 @@ function startOcrInTab(tabId, srcUrl) {
     debugLog('content script injected, retrying message');
     chrome.tabs.sendMessage(tabId, message, { frameId: 0 });
   });
+}
+
+async function cleanupTemporaryImage(imageStoreId) {
+  if (!imageStoreId) {
+    return;
+  }
+
+  try {
+    await OcrImageStore.remove(imageStoreId);
+  } catch (error) {
+    debugLog('temporary image cleanup failed', error.message);
+  }
+}
+
+async function savePopupRequestStart(message) {
+  try {
+    await OcrPopupState.set({
+      requestId: message.requestId,
+      status: 'running',
+      statusText: 'Đang gửi yêu cầu...',
+      progress: 0,
+      text: '',
+      error: '',
+      cached: false,
+      source: message.imageStoreId ? 'popup-upload' : 'popup-url'
+    });
+  } catch (error) {
+    debugLog('popup state start save failed', error.message);
+  }
+}
+
+async function savePopupRequestFailure(requestId, errorMessage) {
+  try {
+    await OcrPopupState.update({
+      requestId,
+      status: 'error',
+      statusText: 'Thất bại',
+      progress: 0,
+      error: errorMessage,
+      cached: false
+    });
+  } catch (error) {
+    debugLog('popup state failure save failed', error.message);
+  }
+}
+
+async function savePopupOcrMessage(message) {
+  try {
+    const current = await OcrPopupState.get();
+    if (current?.requestId && current.requestId !== message.requestId) {
+      return;
+    }
+
+    if (message.action === 'ocr-progress') {
+      if (current?.status === 'done' || current?.status === 'error') {
+        return;
+      }
+
+      await OcrPopupState.update({
+        requestId: message.requestId,
+        status: 'running',
+        statusText: message.status || current?.statusText || 'Đang xử lý...',
+        progress: typeof message.progress === 'number' ? message.progress : current?.progress || 0,
+        error: ''
+      });
+      return;
+    }
+
+    if (message.action === 'ocr-result') {
+      await OcrPopupState.set({
+        requestId: message.requestId,
+        status: 'done',
+        statusText: message.cached ? 'Hoàn thành (Cache)' : 'Hoàn thành',
+        progress: 1,
+        text: message.text || '',
+        error: '',
+        cached: Boolean(message.cached)
+      });
+      return;
+    }
+
+    if (message.action === 'ocr-error') {
+      await OcrPopupState.set({
+        requestId: message.requestId,
+        status: 'error',
+        statusText: 'Thất bại',
+        progress: 0,
+        text: '',
+        error: message.error || 'Unknown error',
+        cached: false
+      });
+    }
+  } catch (error) {
+    debugLog('popup state message save failed', error.message);
+  }
 }
 
 chrome.contextMenus.onClicked.addListener(info => {
@@ -125,43 +222,64 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message && message.action === 'ocr-offscreen') {
     (async () => {
+      const tabId = _sender.tab?.id || null; // Allow null (e.g. from popup)
+      const isPopupRequest = !tabId;
       try {
-        const tabId = _sender.tab?.id || null; // Allow null (e.g. from popup)
+        if (isPopupRequest) {
+          await savePopupRequestStart(message);
+        }
         await ensureOffscreenDocument();
         debugLog('forward ocr-run to offscreen', {
           tabId,
           requestId: message.requestId,
           source: tabId ? 'content' : 'popup'
         });
+        if (isPopupRequest) {
+          await OcrPopupState.update({
+            requestId: message.requestId,
+            status: 'running',
+            statusText: 'Đang xử lý background...',
+            progress: 0.1
+          });
+        }
         chrome.runtime.sendMessage({
           action: 'ocr-run',
           tabId,
           srcUrl: message.srcUrl,
+          imageStoreId: message.imageStoreId,
           requestId: message.requestId
         });
         sendResponse({ ok: true });
       } catch (error) {
+        if (isPopupRequest) {
+          await cleanupTemporaryImage(message.imageStoreId);
+          await savePopupRequestFailure(message.requestId, error.message);
+        }
         sendResponse({ ok: false, error: error.message });
       }
     })();
     return true;
   }
   if (message && (message.action === 'ocr-result' || message.action === 'ocr-error' || message.action === 'ocr-progress')) {
-    // If request came from a tab, forward result back to that tab
-    if (message.tabId) {
-      debugLog('forward result to tab', {
-        action: message.action,
-        tabId: message.tabId,
-        requestId: message.requestId
-      });
-      chrome.tabs.sendMessage(message.tabId, message, { frameId: 0 });
-    } else {
-        debugLog('broadcast result (popup)', { // Log for popup
-            action: message.action,
-            requestId: message.requestId
+    (async () => {
+      // If request came from a tab, forward result back to that tab
+      if (message.tabId !== null && message.tabId !== undefined) {
+        debugLog('forward result to tab', {
+          action: message.action,
+          tabId: message.tabId,
+          requestId: message.requestId
         });
-    }
-    return;
+        chrome.tabs.sendMessage(message.tabId, message, { frameId: 0 });
+      } else {
+        debugLog('persist result (popup)', {
+          action: message.action,
+          requestId: message.requestId
+        });
+        await savePopupOcrMessage(message);
+      }
+      sendResponse({ ok: true });
+    })();
+    return true;
   }
   if (!message || message.action !== 'fetch-image' || !message.url) {
     return;

@@ -60,6 +60,7 @@ src/
   content/                    Content script + overlay UI
   offscreen/                  Offscreen OCR worker
   popup/                      Popup UI
+  shared/                     Shared extension-page helpers
 manifest.json                 Manifest MV3
 ```
 
@@ -94,6 +95,7 @@ Context menu:
 - OCR runs locally; no text is sent to a server.
 - Images may be fetched from their URLs for OCR, depending on the source.
 - Cache is stored in `chrome.storage.local` using image hashes.
+- The latest popup OCR state is stored in `chrome.storage.session` so closing and reopening the popup can restore progress or results during the same browser session.
 
 ## Performance and caching
 - **Multi-pass OCR**: Runs recognition twice (normal + inverted) to handle colored/stylized fonts, approximately 60% slower than single-pass but significantly more accurate.
