@@ -27,28 +27,36 @@ The extension focuses on two main workflows:
 ## Features
 - **Offline OCR** with Tesseract.js (local assets, no external API calls).
 - **Language support**: `eng+vie` by default, with popup options for `vie` and `eng`.
-- **Multi-pass OCR**: Dual-pass recognition (normal + color-inverted) to capture both light and dark colored text.
-- **Advanced noise reduction**: Heuristic filtering based on confidence scores, symbol density, and word length.
-- **Image preprocessing**: Grayscale conversion with adaptive contrast enhancement.
+- **Profile-based OCR pipeline**: Runs a small sequence of OCR profiles (document block + inverted variant) instead of a single hard-coded pass.
+- **Structured post-processing**: Filters OCR output using line and word confidence data before choosing the best candidate.
+- **Image preprocessing**: Grayscale conversion with adaptive contrast enhancement, organized as reusable offscreen modules.
 - **Shadow DOM overlay**: Style-isolated result overlay prevents conflicts with host page CSS.
-- **Premium UI design**: Modern, responsive interface with smooth animations and glassmorphism aesthetics.
 - **Smart caching**: SHA-256 hash-based cache to avoid redundant OCR operations.
 - **Warm worker**: Persistent Tesseract worker with auto-termination after idle timeout.
 
 ## Architecture and flow
-All OCR processing is centralized in the offscreen document, ensuring consistent performance and memory efficiency. Both the Popup and Context Menu workflows share the same warm Tesseract worker.
+All OCR processing is centralized in the offscreen document, ensuring consistent performance and memory efficiency. Both the Popup and Context Menu workflows share the same warm Tesseract worker. The offscreen stack is split into small script-loaded modules so the extension still works with `Load unpacked` and no build step.
 
 ```
 User → Popup / Context Menu
      → Background Service Worker (message routing)
-     → Offscreen Document (Tesseract worker)
-        ├─ Multi-pass OCR (normal + inverted)
-        ├─ Heuristic noise filtering
+     → Offscreen Document
+        ├─ OCR Profiles (`ocr-profiles.js`)
+        ├─ Preprocess Module (`ocr-preprocess.js`)
+        ├─ Tesseract Worker Runner (`offscreen.js`)
+        ├─ Post-process Module (`ocr-postprocess.js`)
         └─ Result caching (SHA-256)
      → Results forwarded to:
         ├─ Popup UI
         └─ Content Script (Shadow DOM overlay)
 ```
+
+Offscreen responsibilities:
+- `src/offscreen/ocr-profiles.js`: declares which OCR profiles run and which Tesseract/preprocess settings each profile uses.
+- `src/offscreen/ocr-preprocess.js`: owns content hashing and deterministic image preprocessing.
+- `src/offscreen/ocr-postprocess.js`: owns structured OCR filtering, overlap cleanup, and candidate scoring/selection.
+- `src/offscreen/offscreen.js`: owns queueing, worker lifecycle, cache lookup/write, progress reporting, and final message dispatch.
+- `src/offscreen/offscreen.html`: loads the offscreen scripts in dependency order with no bundler.
 
 ## Folder structure
 ```
@@ -58,7 +66,12 @@ assets/
 src/
   background/                 Service worker, context menu, message routing
   content/                    Content script + overlay UI
-  offscreen/                  Offscreen OCR worker
+  offscreen/                  Offscreen OCR runner + profiles + preprocess + postprocess
+    offscreen.html            Offscreen document script loader
+    offscreen.js              OCR orchestration, queue, worker lifecycle, cache
+    ocr-profiles.js           OCR profile definitions
+    ocr-preprocess.js         Hashing and image preprocessing
+    ocr-postprocess.js        Structured OCR cleanup and candidate scoring
   popup/                      Popup UI
   shared/                     Shared extension-page helpers
 manifest.json                 Manifest MV3
@@ -100,9 +113,9 @@ Context menu:
 - The latest popup OCR state is stored in `chrome.storage.session` so closing and reopening the popup can restore progress or results during the same browser session.
 
 ## Performance and caching
-- **Multi-pass OCR**: Runs recognition twice (normal + inverted) to handle colored/stylized fonts, approximately 60% slower than single-pass but significantly more accurate.
+- **Profile sequence**: The default offscreen pipeline runs two document-oriented profiles (normal + inverted) and chooses the strongest candidate from structured OCR output.
 - **Warm worker**: Tesseract instance stays initialized and auto-terminates after ~5 minutes of idle time.
-- **SHA-256 caching**: Image content is hashed and cached per OCR language to avoid redundant OCR operations on identical images. Cache entries older than 7 days are pruned, and only the latest 100 OCR cache entries are kept.
+- **SHA-256 caching**: Image content is hashed and cached per OCR language and OCR pipeline version to avoid redundant OCR operations on identical images. Cache entries older than 7 days are pruned, and only the latest 100 OCR cache entries are kept.
 - **Sequential queue**: OCR jobs are processed one at a time to prevent memory overload.
 
 ## Configuration
@@ -115,8 +128,9 @@ The popup language selector supports `eng+vie`, `vie`, and `eng`; the selected l
 - **Missing OCR menu**: Reload the page and ensure an image is present. The content script may not have initialized yet.
 - **OCR not running**: Check the Console (F12) and confirm Tesseract worker and WASM files load successfully.
 - **Images from restricted domains**: May be blocked by CSP or CORS policies.
-- **Stylized/3D fonts**: Multi-pass OCR helps but Tesseract has inherent limitations with highly stylized fonts (gradient, 3D effects, artistic typography). For better accuracy with such fonts, consider commercial OCR APIs (Google Vision, Azure Computer Vision).
-- **Empty results**: If noise filtering is too aggressive, results may be discarded. The extension uses smart fallback to return raw OCR output when filtered results are too short.
+- **Stylized/3D fonts**: The profile-based pipeline helps, but Tesseract still has inherent limitations with highly stylized fonts (gradient, 3D effects, artistic typography). For better accuracy with such fonts, consider commercial OCR APIs.
+- **Unexpected repeated fragments**: Inspect the raw OCR lines in the offscreen context before changing heuristics. Candidate selection and overlap cleanup live in `src/offscreen/ocr-postprocess.js`.
+- **Empty results**: If structured post-processing rejects too much text, the extension falls back to the raw OCR candidate text when the filtered output is too short.
 
 ## Agent guideline
 Project architecture, clean-code rules, privacy rules, and manual test expectations are documented in `AGENT_GUIDELINE.md`.

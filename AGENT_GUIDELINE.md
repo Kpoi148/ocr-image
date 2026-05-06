@@ -18,9 +18,25 @@ Keep responsibilities separated by extension context:
   - If a new message action is added, document its direction and payload shape near the related handler.
 
 - `src/offscreen/offscreen.js`
-  - Owns the OCR pipeline: image loading, hashing, cache lookup/write, preprocessing, Tesseract worker lifecycle, queueing, progress, and final result creation.
+  - Owns OCR orchestration only: image loading, cache lookup/write, Tesseract worker lifecycle, queueing, progress, and final result dispatch.
   - Keep the OCR worker warm only when useful, and terminate it after idle time to control memory.
   - Keep jobs sequential unless there is a measured reason to change; parallel OCR can exhaust memory quickly.
+
+- `src/offscreen/ocr-profiles.js`
+  - Owns OCR profile definitions: which passes run, which preprocess options they use, and which Tesseract parameters apply.
+  - Prefer adding or tuning profiles here instead of branching ad hoc inside `offscreen.js`.
+
+- `src/offscreen/ocr-preprocess.js`
+  - Owns blob hashing and deterministic image preprocessing.
+  - Keep it side-effect free apart from image transformation work.
+
+- `src/offscreen/ocr-postprocess.js`
+  - Owns structured OCR filtering, overlap cleanup, and candidate scoring/selection.
+  - Work from `lines` and `words` data first; avoid broad regex cleanup on final plain text unless there is no better structured signal.
+
+- `src/offscreen/offscreen.html`
+  - Owns offscreen script load order.
+  - Keep dependency order explicit and compatible with direct `<script>` loading; do not introduce a build step or module loader requirement.
 
 - `src/content/content-ocr.js`
   - Owns page interaction and the result overlay.
@@ -65,8 +81,10 @@ Rules:
 ## OCR Pipeline Rules
 
 - Keep preprocessing deterministic and side-effect free.
-- Cache by image content hash plus OCR language, not by URL. URLs can change or serve different content.
-- When changing filters, preserve a fallback path for low-confidence or short OCR output.
+- Cache by image content hash plus OCR language and pipeline version, not by URL. URLs can change or serve different content.
+- Prefer choosing the best OCR candidate from structured outputs over merging raw text from multiple passes.
+- When changing filters or overlap cleanup, preserve a fallback path for low-confidence or short OCR output.
+- Prefer tuning profile definitions in `src/offscreen/ocr-profiles.js` before adding new special cases in the runner.
 - The default Tesseract language profile is `eng+vie`. Keep supported popup language options aligned with bundled `.traineddata` files and `src/shared/ocr-languages.js`.
 - Report useful progress statuses for long steps: hashing, preprocessing, recognizing, cache hit, completion, and errors.
 

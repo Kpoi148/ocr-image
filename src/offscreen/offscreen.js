@@ -1,13 +1,11 @@
 const DEBUG = false;
 const ACTIONS = globalThis.OcrActions;
 const LANGUAGES = globalThis.OcrLanguages;
-const PREPROCESS_OPTIONS = {
-  grayscale: true,
-  contrast: 0.5, // Increased to enhance stylized/gradient fonts
-  threshold: false // Disabled to preserve gradient/shadow details for stylized fonts
-};
+const PROFILES = globalThis.OcrProfiles;
+const PREPROCESS = globalThis.OcrPreprocess;
+const POSTPROCESS = globalThis.OcrPostprocess;
 const WORKER_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
-const OCR_CACHE_PREFIX = 'ocr:';
+const OCR_CACHE_PREFIX = `ocr:${PROFILES.CACHE_VERSION}:`;
 const OCR_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const OCR_CACHE_MAX_ENTRIES = 100;
 
@@ -15,6 +13,7 @@ let warmWorker = null;
 let warmWorkerPromise = null;
 let warmWorkerLanguage = null;
 let warmWorkerPromiseLanguage = null;
+let warmWorkerParametersSignature = null;
 let workerIdleTimer = null;
 let workerProgressContext = null;
 const memoryCache = new Map();
@@ -30,7 +29,8 @@ async function fetchImageBlob(url) {
   if (!response.ok) {
     throw new Error(`Khong the tai anh (${response.status})`);
   }
-  return await response.blob();
+
+  return response.blob();
 }
 
 async function getImageBlobForJob(job) {
@@ -57,22 +57,6 @@ async function cleanupJobImage(job) {
   }
 }
 
-function bufferToHex(buffer) {
-  const bytes = new Uint8Array(buffer);
-  let hex = '';
-  for (let i = 0; i < bytes.length; i += 1) {
-    const value = bytes[i].toString(16).padStart(2, '0');
-    hex += value;
-  }
-  return hex;
-}
-
-async function hashBlob(blob) {
-  const buffer = await blob.arrayBuffer();
-  const digest = await crypto.subtle.digest('SHA-256', buffer);
-  return bufferToHex(digest);
-}
-
 function getCacheKey(hash, language) {
   return `${OCR_CACHE_PREFIX}${LANGUAGES.normalize(language)}:${hash}`;
 }
@@ -83,6 +67,7 @@ async function getCachedResult(hash, language) {
     const data = await chrome.storage.local.get(key);
     return data[key] || null;
   }
+
   return memoryCache.get(key) || null;
 }
 
@@ -131,122 +116,8 @@ async function setCachedResult(hash, language, entry) {
     await pruneCachedResults();
     return;
   }
+
   memoryCache.set(key, entry);
-}
-
-function clampByte(value) {
-  if (value < 0) return 0;
-  if (value > 255) return 255;
-  return value;
-}
-
-function computeOtsuThreshold(histogram, total) {
-  let sum = 0;
-  for (let i = 0; i < 256; i += 1) {
-    sum += i * histogram[i];
-  }
-
-  let sumB = 0;
-  let wB = 0;
-  let max = 0;
-  let threshold = 128;
-
-  for (let i = 0; i < 256; i += 1) {
-    wB += histogram[i];
-    if (wB === 0) {
-      continue;
-    }
-    const wF = total - wB;
-    if (wF === 0) {
-      break;
-    }
-    sumB += i * histogram[i];
-    const mB = sumB / wB;
-    const mF = (sum - sumB) / wF;
-    const between = wB * wF * (mB - mF) * (mB - mF);
-    if (between > max) {
-      max = between;
-      threshold = i;
-    }
-  }
-
-  return threshold;
-}
-
-async function preprocessImage(blob, options) {
-  const bitmap = await createImageBitmap(blob);
-  const width = bitmap.width;
-  const height = bitmap.height;
-  const canvas = typeof OffscreenCanvas !== 'undefined'
-    ? new OffscreenCanvas(width, height)
-    : document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-
-  const context = canvas.getContext('2d', { willReadFrequently: true });
-  context.drawImage(bitmap, 0, 0);
-  if (typeof bitmap.close === 'function') {
-    bitmap.close();
-  }
-
-  const imageData = context.getImageData(0, 0, width, height);
-  const data = imageData.data;
-  const totalPixels = width * height;
-
-  const histogram = options.threshold ? new Uint32Array(256) : null;
-  const contrastFactor = options.contrast ? (1 + options.contrast) : 1;
-
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
-    let gray = options.grayscale ? (0.299 * r + 0.587 * g + 0.114 * b) : r;
-    if (options.contrast) {
-      gray = 128 + (gray - 128) * contrastFactor;
-    }
-    gray = clampByte(gray) | 0;
-
-    // Apply inversion if enabled
-    if (options.invert) {
-      gray = 255 - gray;
-    }
-
-    data[i] = gray;
-    data[i + 1] = gray;
-    data[i + 2] = gray;
-    data[i + 3] = 255;
-    if (histogram) {
-      histogram[gray] += 1;
-    }
-  }
-
-  if (histogram) {
-    const threshold = computeOtsuThreshold(histogram, totalPixels);
-    for (let i = 0; i < data.length; i += 4) {
-      const value = data[i] > threshold ? 255 : 0;
-      data[i] = value;
-      data[i + 1] = value;
-      data[i + 2] = value;
-    }
-  }
-
-  context.putImageData(imageData, 0, 0);
-
-  if (typeof canvas.convertToBlob === 'function') {
-    return canvas.convertToBlob({ type: 'image/png' });
-  }
-  return new Promise(resolve => {
-    canvas.toBlob(resolved => resolve(resolved), 'image/png');
-  });
-}
-
-function getOcrLines(data) {
-  const lines = Array.isArray(data?.lines) ? data.lines : [];
-  return lines.map(line => ({
-    text: line?.text || '',
-    confidence: typeof line?.confidence === 'number' ? line.confidence : 0,
-    words: Array.isArray(line?.words) ? line.words : []
-  }));
 }
 
 function sendProgress(tabId, requestId, status, progress, language) {
@@ -281,20 +152,26 @@ function clearWorkerIdleTimer() {
   }
 }
 
+function resetWarmWorkerState() {
+  warmWorker = null;
+  warmWorkerLanguage = null;
+  warmWorkerParametersSignature = null;
+}
+
 function scheduleWorkerTermination() {
   clearWorkerIdleTimer();
   workerIdleTimer = setTimeout(async () => {
     if (!warmWorker) {
       return;
     }
+
     debugLog('worker idle timeout, terminating');
     try {
       await warmWorker.terminate();
     } catch (error) {
       debugLog('worker terminate error', error.message);
     } finally {
-      warmWorker = null;
-      warmWorkerLanguage = null;
+      resetWarmWorkerState();
     }
   }, WORKER_IDLE_TIMEOUT_MS);
 }
@@ -309,9 +186,25 @@ async function terminateWarmWorker() {
   } catch (error) {
     debugLog('worker terminate error', error.message);
   } finally {
-    warmWorker = null;
-    warmWorkerLanguage = null;
+    resetWarmWorkerState();
   }
+}
+
+function getParameterSignature(parameters) {
+  const entries = Object.entries(parameters || {}).sort((left, right) => left[0].localeCompare(right[0]));
+  return entries.length ? JSON.stringify(entries) : '';
+}
+
+async function ensureWorkerParameters(worker, parameters) {
+  const signature = getParameterSignature(parameters);
+  if (!signature || warmWorkerParametersSignature === signature) {
+    return;
+  }
+
+  if (typeof worker.setParameters === 'function') {
+    await worker.setParameters(parameters);
+  }
+  warmWorkerParametersSignature = signature;
 }
 
 async function getWarmWorker(language) {
@@ -341,6 +234,7 @@ async function getWarmWorker(language) {
   try {
     warmWorker = await warmWorkerPromise;
     warmWorkerLanguage = normalizedLanguage;
+    warmWorkerParametersSignature = null;
     return warmWorker;
   } catch (error) {
     warmWorkerPromise = null;
@@ -352,18 +246,55 @@ async function getWarmWorker(language) {
   }
 }
 
+function getProfilePhaseProgress(profileIndex, totalProfiles, phase) {
+  const baseProgress = 0.15;
+  const profileSlice = 0.8 / Math.max(totalProfiles, 1);
+  const profileStart = baseProgress + (profileIndex * profileSlice);
+
+  if (phase === 'preprocess') {
+    return profileStart;
+  }
+
+  return profileStart + (profileSlice * 0.5);
+}
+
+async function recognizeProfile(worker, imageBlob, language, profile, profileIndex, totalProfiles, tabId, requestId) {
+  sendProgress(
+    tabId,
+    requestId,
+    `preprocessing (${profileIndex + 1}/${totalProfiles})`,
+    getProfilePhaseProgress(profileIndex, totalProfiles, 'preprocess'),
+    language
+  );
+
+  const processedBlob = await PREPROCESS.preprocessImage(imageBlob, profile.preprocess);
+  await ensureWorkerParameters(worker, profile.tesseract);
+
+  sendProgress(
+    tabId,
+    requestId,
+    `recognizing (${profileIndex + 1}/${totalProfiles})`,
+    getProfilePhaseProgress(profileIndex, totalProfiles, 'recognize'),
+    language
+  );
+
+  const { data } = await worker.recognize(processedBlob);
+  return POSTPROCESS.buildCandidate(data, profile);
+}
+
 async function runOcrJob(job) {
   const { srcUrl, imageStoreId, tabId, requestId } = job;
   const language = LANGUAGES.normalize(job.language);
   debugLog('run job', { tabId, requestId, srcUrl, imageStoreId, language });
 
   clearWorkerIdleTimer();
+
   try {
     sendProgress(tabId, requestId, 'hashing', 0, language);
-    sendProgress(tabId, requestId, 'preprocessing', 0, language);
     const imageBlob = await getImageBlobForJob(job);
-    const imageHash = await hashBlob(imageBlob);
+    const imageHash = await PREPROCESS.hashBlob(imageBlob);
     sendProgress(tabId, requestId, 'hashing', 1, language);
+
     const cached = await getCachedResult(imageHash, language);
     if (cached && cached.text) {
       chrome.runtime.sendMessage({
@@ -378,56 +309,43 @@ async function runOcrJob(job) {
       scheduleWorkerTermination();
       return;
     }
-    const processedBlob = await preprocessImage(imageBlob, PREPROCESS_OPTIONS);
-    sendProgress(tabId, requestId, 'preprocessing', 1, language);
 
-    workerProgressContext = { tabId, requestId, language };
     const worker = await getWarmWorker(language);
+    workerProgressContext = { tabId, requestId, language };
 
-    // --- Multi-pass OCR: Normal + Inverted ---
-    sendProgress(tabId, requestId, 'recognizing (pass 1/2)', 0.5, language);
-    const { data: data1 } = await worker.recognize(processedBlob);
+    const profiles = PROFILES.getProfilesForJob(job);
+    if (!profiles.length) {
+      throw new Error('Khong co OCR profile phu hop');
+    }
 
-    sendProgress(tabId, requestId, 'recognizing (pass 2/2)', 0.75, language);
-    const processedBlobInverted = await preprocessImage(imageBlob, { ...PREPROCESS_OPTIONS, invert: true });
-    const { data: data2 } = await worker.recognize(processedBlobInverted);
+    const candidates = [];
+    for (let i = 0; i < profiles.length; i += 1) {
+      const profile = profiles[i];
+      const candidate = await recognizeProfile(
+        worker,
+        imageBlob,
+        language,
+        profile,
+        i,
+        profiles.length,
+        tabId,
+        requestId
+      );
+      candidates.push(candidate);
+    }
 
-    // Merge results: combine unique lines from both passes
-    const allLines = [
-      ...getOcrLines(data1),
-      ...getOcrLines(data2)
-    ];
+    const bestCandidate = POSTPROCESS.chooseBestCandidate(candidates);
+    const fallbackText = candidates.find(candidate => candidate.rawText)?.rawText || '';
+    const finalText = bestCandidate?.text || fallbackText;
 
-    // Filter and deduplicate
-    const filterLine = (line) => {
-      const validWords = line.words.filter(w => {
-        const text = typeof w?.text === 'string' ? w.text : '';
-        const confidence = typeof w?.confidence === 'number' ? w.confidence : 0;
-        if (!text) return false;
-        if (confidence < 40) return false;
-        if (text.length <= 2 && confidence < 50) return false;
-        if (text.length === 1 && /[^a-zA-Z0-9\u00C0-\u1EF9&]/.test(text) && confidence < 80) return false;
-        return true;
-      }).map(w => w.text);
-      return validWords.join(' ');
-    };
-
-    const seen = new Set();
-    const uniqueLines = allLines.map(line => {
-      const filtered = filterLine(line);
-      if (!filtered || filtered.length < 2) return null;
-
-      // Deduplicate by normalized text
-      const normalized = filtered.toLowerCase().replace(/\s+/g, ' ').trim();
-      if (seen.has(normalized)) return null;
-      seen.add(normalized);
-
-      return filtered;
-    }).filter(l => l !== null);
-
-    const mergedText = uniqueLines.join('\n');
-    const rawText = [data1?.text, data2?.text].filter(Boolean).join('\n');
-    const finalText = mergedText.length > 15 ? mergedText : rawText;
+    debugLog('OCR candidate scores', candidates.map(candidate => ({
+      profileId: candidate.profileId,
+      score: candidate.score,
+      averageConfidence: candidate.averageConfidence,
+      repeatPenalty: candidate.repeatPenalty,
+      overlapPenalty: candidate.overlapPenalty,
+      words: candidate.totalWordCount
+    })));
 
     await setCachedResult(imageHash, language, {
       text: finalText,
@@ -435,6 +353,7 @@ async function runOcrJob(job) {
       language,
       createdAt: Date.now()
     });
+
     chrome.runtime.sendMessage({
       action: ACTIONS.OCR_RESULT,
       tabId,
@@ -466,6 +385,7 @@ async function processQueue() {
   if (isRunning || queue.length === 0) {
     return;
   }
+
   isRunning = true;
   const job = queue.shift();
   await runOcrJob(job);
@@ -477,6 +397,7 @@ chrome.runtime.onMessage.addListener(message => {
   if (!message || message.action !== ACTIONS.OCR_RUN || (!message.srcUrl && !message.imageStoreId)) {
     return;
   }
+
   queue.push({
     srcUrl: message.srcUrl,
     imageStoreId: message.imageStoreId,
