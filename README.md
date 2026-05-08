@@ -27,9 +27,9 @@ The extension focuses on two main workflows:
 ## Features
 - **Offline OCR** with Tesseract.js (local assets, no external API calls).
 - **Language support**: `eng+vie` by default, with popup options for `vie` and `eng`.
-- **Profile-based OCR pipeline**: Runs a small sequence of OCR profiles (document block + inverted variant) instead of a single hard-coded pass.
+- **Profile-based OCR pipeline**: Runs a small sequence of OCR profiles for document text, thresholded scans, sparse screenshots, and inverted text instead of a single hard-coded pass.
 - **Structured post-processing**: Filters OCR output using line and word confidence data before choosing the best candidate.
-- **Image preprocessing**: Grayscale conversion with adaptive contrast enhancement, organized as reusable offscreen modules.
+- **Image preprocessing**: Grayscale conversion, contrast tuning, bounded small-image upscaling, and optional thresholding, organized as reusable offscreen modules.
 - **Shadow DOM overlay**: Style-isolated result overlay prevents conflicts with host page CSS.
 - **Smart caching**: SHA-256 hash-based cache to avoid redundant OCR operations.
 - **Warm worker**: Persistent Tesseract worker with auto-termination after idle timeout.
@@ -113,7 +113,7 @@ Context menu:
 - The latest popup OCR state is stored in `chrome.storage.session` so closing and reopening the popup can restore progress or results during the same browser session.
 
 ## Performance and caching
-- **Profile sequence**: The default offscreen pipeline runs two document-oriented profiles (normal + inverted) and chooses the strongest candidate from structured OCR output.
+- **Profile sequence**: The default offscreen pipeline runs document, thresholded document, sparse screenshot, and inverted profiles, then chooses the strongest candidate from structured OCR output.
 - **Warm worker**: Tesseract instance stays initialized and auto-terminates after ~5 minutes of idle time.
 - **SHA-256 caching**: Image content is hashed and cached per OCR language and OCR pipeline version to avoid redundant OCR operations on identical images. Cache entries older than 7 days are pruned, and only the latest 100 OCR cache entries are kept.
 - **Sequential queue**: OCR jobs are processed one at a time to prevent memory overload.

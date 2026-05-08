@@ -65,10 +65,38 @@
     return threshold;
   }
 
+  function computeTargetSize(width, height, options) {
+    let scale = 1;
+
+    if (options.upscale) {
+      const shortSide = Math.min(width, height);
+      const targetShortSide = options.upscaleMinDimension || 900;
+      const maxScale = options.upscaleMaxScale || 2;
+
+      if (shortSide > 0 && shortSide < targetShortSide) {
+        scale = Math.min(maxScale, targetShortSide / shortSide);
+      }
+    }
+
+    const maxPixels = options.maxPixels || 4000000;
+    const scaledPixels = width * height * scale * scale;
+    if (scale > 1 && scaledPixels > maxPixels) {
+      scale = Math.sqrt(maxPixels / (width * height));
+    }
+
+    scale = Math.max(1, scale);
+
+    return {
+      width: Math.max(1, Math.round(width * scale)),
+      height: Math.max(1, Math.round(height * scale))
+    };
+  }
+
   async function preprocessImage(blob, options) {
     const bitmap = await createImageBitmap(blob);
-    const width = bitmap.width;
-    const height = bitmap.height;
+    const sourceWidth = bitmap.width;
+    const sourceHeight = bitmap.height;
+    const { width, height } = computeTargetSize(sourceWidth, sourceHeight, options);
     const canvas = typeof OffscreenCanvas !== 'undefined'
       ? new OffscreenCanvas(width, height)
       : document.createElement('canvas');
@@ -77,7 +105,9 @@
     canvas.height = height;
 
     const context = canvas.getContext('2d', { willReadFrequently: true });
-    context.drawImage(bitmap, 0, 0);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(bitmap, 0, 0, sourceWidth, sourceHeight, 0, 0, width, height);
     if (typeof bitmap.close === 'function') {
       bitmap.close();
     }

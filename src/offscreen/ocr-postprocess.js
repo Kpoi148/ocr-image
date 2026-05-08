@@ -35,6 +35,51 @@
       : [];
   }
 
+  function cleanOutputLine(text) {
+    return text
+      .replace(/\t+/g, ' ')
+      .replace(/[ ]{3,}/g, '  ')
+      .replace(/\s+([,.;:!?%])/g, '$1')
+      .replace(/([([{])\s+/g, '$1')
+      .replace(/\s+([)\]}])/g, '$1')
+      .trim();
+  }
+
+  function cleanFinalText(text) {
+    if (typeof text !== 'string') {
+      return '';
+    }
+
+    const cleanedLines = text
+      .replace(/\r\n?/g, '\n')
+      .split('\n')
+      .map(cleanOutputLine);
+    const mergedLines = [];
+
+    for (const line of cleanedLines) {
+      if (!line) {
+        if (mergedLines.length && mergedLines[mergedLines.length - 1]) {
+          mergedLines.push('');
+        }
+        continue;
+      }
+
+      const previousLine = mergedLines[mergedLines.length - 1];
+      if (
+        previousLine
+        && /[A-Za-z\u00C0-\u1EF9]-$/.test(previousLine)
+        && /^[A-Za-z\u00C0-\u1EF9]/.test(line)
+      ) {
+        mergedLines[mergedLines.length - 1] = previousLine.slice(0, -1) + line;
+        continue;
+      }
+
+      mergedLines.push(line);
+    }
+
+    return mergedLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
   function getOcrLines(data) {
     const lines = Array.isArray(data?.lines) ? data.lines : [];
     return lines.map(line => ({
@@ -272,6 +317,48 @@
     return penalty;
   }
 
+  function measureGarbagePenalty(text) {
+    const rawTokens = normalizeText(text).split(' ').filter(Boolean);
+    if (!rawTokens.length) {
+      return 0;
+    }
+
+    let penalty = 0;
+    let singleCharacterCount = 0;
+    let symbolHeavyCount = 0;
+
+    for (const rawToken of rawTokens) {
+      const token = normalizeToken(rawToken);
+      if (!token) {
+        penalty += 3;
+        continue;
+      }
+
+      if (token.length === 1) {
+        singleCharacterCount += 1;
+      }
+
+      const visibleLength = rawToken.replace(/\s/g, '').length;
+      const textLength = (rawToken.match(/[a-z0-9\u00C0-\u1EF9]/gi) || []).length;
+      if (visibleLength && textLength / visibleLength < 0.5) {
+        symbolHeavyCount += 1;
+      }
+
+      if (/[|_~`]{2,}/.test(rawToken)) {
+        penalty += 2;
+      }
+    }
+
+    if (rawTokens.length >= 8) {
+      penalty += Math.max(0, singleCharacterCount - Math.ceil(rawTokens.length * 0.2)) * 1.5;
+    }
+
+    penalty += symbolHeavyCount * 2;
+    penalty += (text.match(/\uFFFD/g) || []).length * 4;
+
+    return penalty;
+  }
+
   function summarizeLines(lines) {
     return lines.reduce((summary, line) => ({
       totalWordCount: summary.totalWordCount + line.wordCount,
@@ -290,8 +377,8 @@
       .filter(Boolean);
 
     const compactedLines = compactFilteredLines(filteredLines);
-    const filteredText = compactedLines.map(line => line.text).join('\n').trim();
-    const rawText = typeof data?.text === 'string' ? data.text.trim() : '';
+    const filteredText = cleanFinalText(compactedLines.map(line => line.text).join('\n'));
+    const rawText = cleanFinalText(typeof data?.text === 'string' ? data.text : '');
     const text = filteredText.length > MIN_FILTERED_TEXT_LENGTH ? filteredText : rawText;
     const summary = summarizeLines(compactedLines);
     const averageConfidence = summary.totalWordCount
@@ -302,9 +389,11 @@
       : 1;
     const overlapPenalty = measureAdjacentOverlapPenalty(compactedLines);
     const repeatPenalty = measureRepeatedPhrasePenalty(text);
+    const garbagePenalty = measureGarbagePenalty(text);
     const score = averageConfidence
       - overlapPenalty
       - repeatPenalty
+      - garbagePenalty
       - (lowConfidenceRatio * 25)
       + Math.min(summary.totalWordCount, SCORE_WORD_BONUS_LIMIT) * 0.05
       + Math.min(compactedLines.length, SCORE_LINE_BONUS_LIMIT) * 0.5
@@ -320,6 +409,7 @@
       lowConfidenceRatio,
       overlapPenalty,
       repeatPenalty,
+      garbagePenalty,
       totalWordCount: summary.totalWordCount,
       lineCount: compactedLines.length
     };
@@ -348,6 +438,7 @@
 
   globalThis.OcrPostprocess = Object.freeze({
     buildCandidate,
-    chooseBestCandidate
+    chooseBestCandidate,
+    cleanFinalText
   });
 })();
