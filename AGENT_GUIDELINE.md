@@ -146,3 +146,4 @@ Before finishing changes that affect behavior, test at least the relevant items:
 - Do not modify license text unless explicitly requested.
 - Do not reformat vendor assets or unrelated files.
 - If a change affects the message contract, update all senders and receivers together.
+- Commit messages should use a short lowercase prefix before the summary, such as `feat:`, `fix:`, `docs:`, `refactor:`, `perf:`, `test:`, or `chore:`.
