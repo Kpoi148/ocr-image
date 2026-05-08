@@ -32,11 +32,12 @@
     }),
     Object.freeze({
       id: 'document-threshold',
-      label: 'Document Threshold',
+      label: 'Document Adaptive Threshold',
       preprocess: Object.freeze({
         ...BASE_PREPROCESS_OPTIONS,
         contrast: 0.35,
-        threshold: true
+        threshold: 'adaptive',
+        adaptiveBias: 10
       }),
       tesseract: DOCUMENT_BLOCK_PARAMETERS
     }),
@@ -66,7 +67,7 @@
   }
 
   globalThis.OcrProfiles = Object.freeze({
-    CACHE_VERSION: 'v3',
+    CACHE_VERSION: 'v4',
     getProfilesForJob,
     getProfileById
   });
