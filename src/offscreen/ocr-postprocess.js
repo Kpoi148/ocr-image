@@ -13,6 +13,8 @@
   const MAX_OVERLAP_WORDS = 8;
   const MIN_SUBSEQUENCE_WORDS = 4;
   const DUPLICATE_JACCARD_THRESHOLD = 0.6;
+  const SPATIAL_DUPLICATE_OVERLAP_THRESHOLD = 0.65;
+  const SPATIAL_DUPLICATE_TOKEN_THRESHOLD = 0.75;
   const SCORE_WORD_BONUS_LIMIT = 120;
   const SCORE_LINE_BONUS_LIMIT = 12;
 
@@ -33,6 +35,91 @@
     return normalized
       ? normalized.split(' ').map(normalizeToken).filter(Boolean)
       : [];
+  }
+
+  function normalizeBox(box) {
+    if (!box || typeof box !== 'object') {
+      return null;
+    }
+
+    const x0 = Number.isFinite(box.x0) ? box.x0 : box.left;
+    const y0 = Number.isFinite(box.y0) ? box.y0 : box.top;
+    const x1 = Number.isFinite(box.x1) ? box.x1 : box.right;
+    const y1 = Number.isFinite(box.y1) ? box.y1 : box.bottom;
+
+    if (![x0, y0, x1, y1].every(Number.isFinite)) {
+      return null;
+    }
+
+    const left = Math.min(x0, x1);
+    const top = Math.min(y0, y1);
+    const right = Math.max(x0, x1);
+    const bottom = Math.max(y0, y1);
+
+    if (right <= left || bottom <= top) {
+      return null;
+    }
+
+    return { x0: left, y0: top, x1: right, y1: bottom };
+  }
+
+  function mergeBoxes(boxes) {
+    let mergedBox = null;
+
+    for (const box of boxes) {
+      if (!box) {
+        continue;
+      }
+
+      if (!mergedBox) {
+        mergedBox = { ...box };
+        continue;
+      }
+
+      mergedBox.x0 = Math.min(mergedBox.x0, box.x0);
+      mergedBox.y0 = Math.min(mergedBox.y0, box.y0);
+      mergedBox.x1 = Math.max(mergedBox.x1, box.x1);
+      mergedBox.y1 = Math.max(mergedBox.y1, box.y1);
+    }
+
+    return mergedBox;
+  }
+
+  function getBoxArea(box) {
+    return box ? Math.max(0, box.x1 - box.x0) * Math.max(0, box.y1 - box.y0) : 0;
+  }
+
+  function getBoxOverlapRatio(leftBox, rightBox) {
+    if (!leftBox || !rightBox) {
+      return 0;
+    }
+
+    const left = Math.max(leftBox.x0, rightBox.x0);
+    const top = Math.max(leftBox.y0, rightBox.y0);
+    const right = Math.min(leftBox.x1, rightBox.x1);
+    const bottom = Math.min(leftBox.y1, rightBox.y1);
+    const intersection = Math.max(0, right - left) * Math.max(0, bottom - top);
+    const smallerArea = Math.min(getBoxArea(leftBox), getBoxArea(rightBox));
+
+    return smallerArea ? intersection / smallerArea : 0;
+  }
+
+  function getTokenContainmentRatio(leftTokens, rightTokens) {
+    if (!leftTokens.length || !rightTokens.length) {
+      return 0;
+    }
+
+    const leftSet = new Set(leftTokens);
+    const rightSet = new Set(rightTokens);
+    let intersectionCount = 0;
+
+    for (const token of rightSet) {
+      if (leftSet.has(token)) {
+        intersectionCount += 1;
+      }
+    }
+
+    return intersectionCount / Math.min(leftSet.size, rightSet.size);
   }
 
   function cleanOutputLine(text) {
@@ -85,11 +172,12 @@
     return lines.map(line => ({
       text: typeof line?.text === 'string' ? line.text : '',
       confidence: typeof line?.confidence === 'number' ? line.confidence : 0,
-      words: Array.isArray(line?.words) ? line.words : []
+      words: Array.isArray(line?.words) ? line.words : [],
+      bbox: normalizeBox(line?.bbox)
     }));
   }
 
-  function buildLineFromWords(words) {
+  function buildLineFromWords(words, fallbackBox = null) {
     const text = words.map(word => word.text).join(' ').trim();
     const tokens = tokenizeText(text);
     const confidenceSum = words.reduce((sum, word) => sum + word.confidence, 0);
@@ -97,12 +185,14 @@
       (sum, word) => sum + (word.confidence < LOW_CONFIDENCE_WORD_THRESHOLD ? 1 : 0),
       0
     );
+    const wordBox = mergeBoxes(words.map(word => word.bbox));
 
     return {
       text,
       normalized: normalizeText(text),
       tokens,
       words,
+      bbox: wordBox || fallbackBox,
       wordCount: words.length,
       confidenceSum,
       lowConfidenceCount,
@@ -110,7 +200,7 @@
     };
   }
 
-  function buildFallbackLine(text, confidence) {
+  function buildFallbackLine(text, confidence, bbox = null) {
     const tokens = tokenizeText(text);
     if (!tokens.length) {
       return null;
@@ -118,10 +208,11 @@
 
     const words = tokens.map(token => ({
       text: token,
-      confidence
+      confidence,
+      bbox: null
     }));
 
-    return buildLineFromWords(words);
+    return buildLineFromWords(words, bbox);
   }
 
   function filterLine(line) {
@@ -144,11 +235,11 @@
         continue;
       }
 
-      validWords.push({ text, confidence });
+      validWords.push({ text, confidence, bbox: normalizeBox(word?.bbox) });
     }
 
     if (validWords.length > 0) {
-      return buildLineFromWords(validWords);
+      return buildLineFromWords(validWords, line.bbox);
     }
 
     const fallbackText = typeof line.text === 'string' ? line.text.trim() : '';
@@ -156,7 +247,7 @@
       return null;
     }
 
-    return buildFallbackLine(fallbackText, line.confidence);
+    return buildFallbackLine(fallbackText, line.confidence, line.bbox);
   }
 
   function getOverlapWordCount(previousTokens, currentTokens, minWords = MIN_OVERLAP_WORDS) {
@@ -238,11 +329,52 @@
     return (intersectionCount / unionCount) >= DUPLICATE_JACCARD_THRESHOLD;
   }
 
+  function areSpatialDuplicates(previousLine, currentLine) {
+    const boxOverlap = getBoxOverlapRatio(previousLine.bbox, currentLine.bbox);
+    if (boxOverlap < SPATIAL_DUPLICATE_OVERLAP_THRESHOLD) {
+      return false;
+    }
+
+    if (previousLine.normalized === currentLine.normalized) {
+      return true;
+    }
+
+    if (isSubsequenceDuplicate(previousLine, currentLine)) {
+      return true;
+    }
+
+    return getTokenContainmentRatio(previousLine.tokens, currentLine.tokens) >= SPATIAL_DUPLICATE_TOKEN_THRESHOLD;
+  }
+
+  function haveSeparatedBoxes(previousLine, currentLine) {
+    return Boolean(
+      previousLine.bbox
+      && currentLine.bbox
+      && getBoxOverlapRatio(previousLine.bbox, currentLine.bbox) < SPATIAL_DUPLICATE_OVERLAP_THRESHOLD
+    );
+  }
+
+  function findSpatialDuplicateIndex(lines, currentLine) {
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+      if (areSpatialDuplicates(lines[i], currentLine)) {
+        return i;
+      }
+    }
+
+    return -1;
+  }
+
   function compactFilteredLines(lines) {
     const compacted = [];
 
     for (const line of lines) {
       if (!line || !line.normalized) {
+        continue;
+      }
+
+      const spatialDuplicateIndex = findSpatialDuplicateIndex(compacted, line);
+      if (spatialDuplicateIndex !== -1) {
+        compacted[spatialDuplicateIndex] = pickPreferredLine(compacted[spatialDuplicateIndex], line);
         continue;
       }
 
@@ -252,22 +384,24 @@
         continue;
       }
 
-      if (line.normalized === previousLine.normalized) {
+      if (line.normalized === previousLine.normalized && !haveSeparatedBoxes(previousLine, line)) {
         compacted[compacted.length - 1] = pickPreferredLine(previousLine, line);
         continue;
       }
 
-      if (isSubsequenceDuplicate(previousLine, line)) {
+      if (isSubsequenceDuplicate(previousLine, line) && !haveSeparatedBoxes(previousLine, line)) {
         compacted[compacted.length - 1] = pickPreferredLine(previousLine, line);
         continue;
       }
 
-      const trimmedLine = trimLeadingOverlap(previousLine, line);
+      const trimmedLine = haveSeparatedBoxes(previousLine, line)
+        ? line
+        : trimLeadingOverlap(previousLine, line);
       if (!trimmedLine) {
         continue;
       }
 
-      if (areNearDuplicates(previousLine, trimmedLine)) {
+      if (areNearDuplicates(previousLine, trimmedLine) && !haveSeparatedBoxes(previousLine, trimmedLine)) {
         compacted[compacted.length - 1] = pickPreferredLine(previousLine, trimmedLine);
         continue;
       }

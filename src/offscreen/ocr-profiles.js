@@ -67,7 +67,7 @@
   }
 
   globalThis.OcrProfiles = Object.freeze({
-    CACHE_VERSION: 'v4',
+    CACHE_VERSION: 'v5',
     getProfilesForJob,
     getProfileById
   });

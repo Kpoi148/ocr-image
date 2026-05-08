@@ -28,7 +28,7 @@ The extension focuses on two main workflows:
 - **Offline OCR** with Tesseract.js (local assets, no external API calls).
 - **Language support**: `eng+vie` by default, with popup options for `vie` and `eng`.
 - **Profile-based OCR pipeline**: Runs a small sequence of OCR profiles for document text, adaptive-threshold scans, sparse screenshots, and inverted text instead of a single hard-coded pass.
-- **Structured post-processing**: Filters OCR output using line and word confidence data before choosing the best candidate.
+- **Structured post-processing**: Filters OCR output using line, word confidence, and bounding-box data before choosing the best candidate.
 - **Image preprocessing**: Grayscale conversion, contrast tuning, bounded small-image upscaling, and optional global/adaptive thresholding, organized as reusable offscreen modules.
 - **Shadow DOM overlay**: Style-isolated result overlay prevents conflicts with host page CSS.
 - **Smart caching**: SHA-256 hash-based cache to avoid redundant OCR operations.
